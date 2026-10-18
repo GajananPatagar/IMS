@@ -55,7 +55,6 @@ enum class NeuralMorphStyle {
     EUPHORIC_SHIMMER_WASH = 5
 };
 
-// 64-Bit Zero-Delay Feedback Trapezoidal State-Variable Filter
 struct CytomicSvf64 {
     double ic1eq = 0.0;
     double ic2eq = 0.0;
@@ -98,14 +97,13 @@ struct CytomicSvf64 {
     }
 };
 
-// Real-Time Zero-Latency Self-Neural 5-Stem Separator & GRU Spectral Masking Core
 struct RealTimeNeuralStemSplitter {
     CytomicSvf64 subL, subR, midL, midR, voxFormantL, voxFormantR;
     double fastEnv[4] = {0.0, 0.0, 0.0, 0.0};
     double slowEnv[4] = {0.0, 0.0, 0.0, 0.0};
     double gruHidden[4] = {0.0, 0.0, 0.0, 0.0};
     double cachedMasks[NUM_STEMS] = {1.0, 1.0, 1.0, 1.0, 0.5};
-    intframeCounter = 0;
+    int frameCounter = 0; // Fixed typo here
 
     void init(double sampleRate) {
         subL.setParams(sampleRate, 150.0, 0.75);
@@ -146,8 +144,7 @@ struct RealTimeNeuralStemSplitter {
         double highTransL = hpMidL + bpSubL * 0.55;
         double highTransR = hpMidR + bpSubR * 0.55;
 
-        // Update GRU Neural Spectral Attention Masks every 16 samples
-        if ((++intframeCounter & 15) == 0) {
+        if ((++frameCounter & 15) == 0) {
             double feat[4] = {
                 0.5 * (std::abs(highTransL) + std::abs(highTransR)),
                 0.5 * (std::abs(lpSubL) + std::abs(lpSubR)),
@@ -168,19 +165,14 @@ struct RealTimeNeuralStemSplitter {
             cachedMasks[4] = sigmoid(3.8 * (fastEnv[0] - slowEnv[0]));
         }
 
-        // 5 Neural Stems: 0=Drums, 1=Bass, 2=Synth/Other, 3=Vocals, 4=GhostTransient
         double s0L = highTransL * cachedMasks[0];
         double s0R = highTransR * cachedMasks[0];
-
         double s1L = lpSubL * cachedMasks[1];
         double s1R = lpSubR * cachedMasks[1];
-
         double s2L = (sideHarm * 1.35 + (lpMidL - voxCore) * 0.55) * cachedMasks[2];
         double s2R = (-sideHarm * 1.35 + (lpMidR - voxCore) * 0.55) * cachedMasks[2];
-
         double s3L = (midMono * 0.65 + voxCore * 0.95) * cachedMasks[3];
         double s3R = s3L;
-
         double s4L = hpMidL * cachedMasks[4] * 0.6;
         double s4R = hpMidR * cachedMasks[4] * 0.6;
 
@@ -195,7 +187,6 @@ struct RealTimeNeuralStemSplitter {
     }
 };
 
-// Self-Neural Real-Time Formant-Preserving Pitch & Time Shifter
 struct SelfNeuralPitchShifter {
     static constexpr size_t GRAIN_SIZE = 2048;
     std::array<float, GRAIN_SIZE> bufL{};
@@ -239,7 +230,6 @@ struct SelfNeuralPitchShifter {
     }
 };
 
-// Allen & Heath Xone:96 / Xone:92 Mk2 Dual VCF with Harmonic CRUNCH
 struct XoneVcfFilter {
     CytomicSvf64 svfL, svfR;
     double cutoffHz = 19000.0;
@@ -267,7 +257,6 @@ struct XoneVcfFilter {
     }
 };
 
-// AlphaTheta Euphonia Rupert Neve Transformer + Self-Neural Psychoacoustic Mastering Bus
 struct RupertNeveTransformerBus {
     double hysteresisL = 0.0;
     double hysteresisR = 0.0;
@@ -327,13 +316,11 @@ struct FlagshipChannelStrip {
     std::atomic<bool> vinylBrakeActive{false};
     double vinylBrakeVelocity = 1.0;
 
-    // Loop & 8 Hot Cues
     std::atomic<bool> loopActive{false};
     std::atomic<double> loopStartSample{0.0};
     std::atomic<double> loopEndSample{44100.0 * 4.0};
     std::array<std::atomic<double>, NUM_HOT_CUES> hotCueSamples;
 
-    // Pitch, Tempo, Jogwheel Scratch & Neural Harmonic Key Shift
     std::atomic<float> tempoRatio{1.0f};
     std::atomic<float> pitchSemitones{0.0f};
     std::atomic<float> jogScratchVelocity{0.0f};
@@ -341,15 +328,12 @@ struct FlagshipChannelStrip {
     std::atomic<float> detectedBpm{128.0f};
     std::atomic<int> detectedCamelotKey{8};
 
-    // 5 Self-Neural Stem Gains (Drums, Bass, Synth, Vocals, GhostTransient)
     std::atomic<float> stemGain[NUM_STEMS] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
     std::atomic<float> stemEnvelope[NUM_STEMS] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
-    // Self-Neural Per-Deck Enhancers
     std::atomic<float> neuralTransientPunch{0.25f};
     std::atomic<float> neuralStereoWidener{0.20f};
 
-    // DJM-V10 Compressor + Xone:92 Mk2 4-Band Surgical EQ
     std::atomic<float> v10CompressorKnob{0.15f};
     double compEnv = 0.0;
     std::atomic<float> eqLow{0.0f};
@@ -357,12 +341,10 @@ struct FlagshipChannelStrip {
     std::atomic<float> eqHiMid{0.0f};
     std::atomic<float> eqHigh{0.0f};
 
-    // DJM-A9 Sound Color FX
     std::atomic<int> colorFxType{static_cast<int>(SoundColorFxType::FILTER)};
     std::atomic<float> colorFxKnob{0.0f};
     uint32_t noiseRngState = 2463534242U;
 
-    // 60mm V10-LF Channel Fader & Telemetry
     std::atomic<float> channelFader{1.0f};
     std::atomic<float> vuMeterPeak{0.0f};
 
@@ -402,7 +384,6 @@ public:
 
     std::array<std::unique_ptr<FlagshipChannelStrip>, NUM_CHANNELS> channels;
 
-    // Master Console & Self-Neural Cross-Deck Matrix Controls
     std::atomic<float> crossfader{0.0f};
     std::atomic<float> masterIsoLow{0.0f};
     std::atomic<float> masterIsoMid{0.0f};
@@ -411,7 +392,6 @@ public:
     std::atomic<float> euphoBoostLevelDb{6.0f};
     std::atomic<float> neveTransformerDrive{0.60f};
 
-    // Self-Neural Global Mixing Intelligence
     std::atomic<float> neuralCrossDeckSidechain{0.35f};
     std::atomic<float> neuralSubBassBoom{0.25f};
     std::atomic<float> neuralAirExciter{0.30f};
@@ -419,14 +399,12 @@ public:
     std::atomic<bool> neuralAutoHarmonicKeyLock{true};
     std::atomic<int> verifiedNeuralBankCount{16};
 
-    // DJM-A9 / V10 14 Beat FX Bus
     std::atomic<int> beatFxType{static_cast<int>(BeatFxType::NONE)};
     std::atomic<float> beatFxWetDry{0.0f};
     std::atomic<float> beatFxTimeMs{375.0f};
     double mMobiusPhase = 0.0;
     double mFlangerPhase = 0.0;
 
-    // Butter Morph Automation
     std::atomic<bool> morphActive{false};
     std::atomic<float> morphProgressState{0.0f};
     double morphElapsedSamples = 0.0;
