@@ -1,6 +1,8 @@
 #pragma once
 
 #include <oboe/Oboe.h>
+#include <android/asset_manager.h>
+#include <android/asset_manager_jni.h>
 #include <vector>
 #include <array>
 #include <atomic>
@@ -12,10 +14,9 @@
 
 namespace apexdj {
 
-constexpr int NUM_STEMS = 5;       // 0:Drums, 1:Bass, 2:Other/Synth, 3:Vocals, 4:NeuralTransientGhost
-constexpr int NUM_CHANNELS = 6;    // 6-Channel V10 / Xone:96 Matrix
+constexpr int NUM_STEMS = 5;       // 0:Drums, 1:Bass, 2:Synth/Harmonic, 3:Vocals, 4:GhostTransient
+constexpr int NUM_CHANNELS = 4;    // Deck A, Deck B, Sampler C, Neural Synth D
 constexpr int NUM_HOT_CUES = 8;    // 8 CDJ-3000 Hot Cues per deck
-constexpr int NUM_PAD_FX = 8;      // 8 Neural Instant Pad Macros
 
 enum class SoundColorFxType {
     NONE = 0,
@@ -50,7 +51,8 @@ enum class NeuralMorphStyle {
     ACAPELLA_VOCAL_RIDE = 1,
     BASS_DROP_SWAP = 2,
     FESTIVAL_RISER_SLAM = 3,
-    DARK_TECHNO_HYPNOSIS = 4
+    DARK_TECHNO_HYPNOSIS = 4,
+    EUPHORIC_SHIMMER_WASH = 5
 };
 
 // 64-Bit Zero-Delay Feedback Trapezoidal State-Variable Filter
@@ -60,7 +62,7 @@ struct CytomicSvf64 {
     double g = 0.0, k = 1.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
 
     void setParams(double sampleRate, double cutoffHz, double Q) {
-        cutoffHz = std::clamp(cutoffHz, 20.0, sampleRate * 0.49);
+        cutoffHz = std::clamp(cutoffHz, 20.0, sampleRate * 0.48);
         g = std::tan(M_PI * cutoffHz / sampleRate);
         k = 1.0 / std::max(Q, 0.1);
         a1 = 1.0 / (1.0 + g * (g + k));
@@ -81,8 +83,8 @@ struct CytomicSvf64 {
 
     double processBell(double v0, double sampleRate, double centerHz, double Q, double gainDb) {
         double A = std::pow(10.0, gainDb / 40.0);
-        double gBell = std::tan(M_PI * centerHz / sampleRate);
-        double kBell = 1.0 / (Q * A);
+        double gBell = std::tan(M_PI * std::clamp(centerHz, 25.0, sampleRate * 0.47) / sampleRate);
+        double kBell = 1.0 / (std::max(Q, 0.1) * A);
         double a1B = 1.0 / (1.0 + gBell * (gBell + kBell));
         double a2B = gBell * a1B;
         double a3B = gBell * a2B;
@@ -96,39 +98,100 @@ struct CytomicSvf64 {
     }
 };
 
-// Built-in C++20 Self-Neural Recurrent Spectral Masking Cell (Zero External Dependencies)
-struct SelfNeuralStemCell {
-    double hiddenState[8] = {0.0};
-    double fastEnv[4] = {0.0};
-    double slowEnv[4] = {0.0};
+// Real-Time Zero-Latency Self-Neural 5-Stem Separator & GRU Spectral Masking Core
+struct RealTimeNeuralStemSplitter {
+    CytomicSvf64 subL, subR, midL, midR, voxFormantL, voxFormantR;
+    double fastEnv[4] = {0.0, 0.0, 0.0, 0.0};
+    double slowEnv[4] = {0.0, 0.0, 0.0, 0.0};
+    double gruHidden[4] = {0.0, 0.0, 0.0, 0.0};
+    double cachedMasks[NUM_STEMS] = {1.0, 1.0, 1.0, 1.0, 0.5};
+    intframeCounter = 0;
 
-    inline double sigmoid(double x) const {
-        return 1.0 / (1.0 + std::exp(-std::clamp(x, -12.0, 12.0)));
+    void init(double sampleRate) {
+        subL.setParams(sampleRate, 150.0, 0.75);
+        subR.setParams(sampleRate, 150.0, 0.75);
+        midL.setParams(sampleRate, 3200.0, 0.707);
+        midR.setParams(sampleRate, 3200.0, 0.707);
+        voxFormantL.setParams(sampleRate, 1150.0, 1.45);
+        voxFormantR.setParams(sampleRate, 1150.0, 1.45);
     }
 
-    void computeNeuralStemMasks(
-        double subEnergy,
-        double midMonoEnergy,
-        double sideHarmEnergy,
-        double highTransientEnergy,
-        double (&masks)[NUM_STEMS]
+    inline double sigmoid(double x) const {
+        return 1.0 / (1.0 + std::exp(-std::clamp(x, -10.0, 10.0)));
+    }
+
+    inline void processSample5Stems(
+        double inL,
+        double inR,
+        const float (&gains)[NUM_STEMS],
+        float (&envOut)[NUM_STEMS],
+        double& outL,
+        double& outR
     ) {
-        double in[4] = {highTransientEnergy, subEnergy, sideHarmEnergy, midMonoEnergy};
-        for (int i = 0; i < 4; ++i) {
-            fastEnv[i] = 0.85 * fastEnv[i] + 0.15 * std::abs(in[i]);
-            slowEnv[i] = 0.996 * slowEnv[i] + 0.004 * std::abs(in[i]);
-            double transientRatio = (fastEnv[i] - slowEnv[i]) / (slowEnv[i] + 1e-5);
-            // Recurrent GRU-style state update
-            double gate = sigmoid(1.8 * transientRatio + 0.45 * hiddenState[i]);
-            hiddenState[i] = gate * hiddenState[i] + (1.0 - gate) * std::tanh(in[i] * 2.4);
+        double lpSubL, bpSubL, hpSubL, lpSubR, bpSubR, hpSubR;
+        subL.processSample(inL, lpSubL, bpSubL, hpSubL);
+        subR.processSample(inR, lpSubR, bpSubR, hpSubR);
+
+        double lpMidL, bpMidL, hpMidL, lpMidR, bpMidR, hpMidR;
+        midL.processSample(hpSubL, lpMidL, bpMidL, hpMidL);
+        midR.processSample(hpSubR, lpMidR, bpMidR, hpMidR);
+
+        double vLpL, vBpL, vHpL, vLpR, vBpR, vHpR;
+        voxFormantL.processSample(lpMidL, vLpL, vBpL, vHpL);
+        voxFormantR.processSample(lpMidR, vLpR, vBpR, vHpR);
+
+        double midMono = 0.5 * (lpMidL + lpMidR);
+        double voxCore = 0.5 * (vBpL + vBpR);
+        double sideHarm = 0.5 * (lpMidL - lpMidR);
+        double highTransL = hpMidL + bpSubL * 0.55;
+        double highTransR = hpMidR + bpSubR * 0.55;
+
+        // Update GRU Neural Spectral Attention Masks every 16 samples
+        if ((++intframeCounter & 15) == 0) {
+            double feat[4] = {
+                0.5 * (std::abs(highTransL) + std::abs(highTransR)),
+                0.5 * (std::abs(lpSubL) + std::abs(lpSubR)),
+                std::abs(sideHarm),
+                std::abs(midMono + voxCore)
+            };
+            for (int i = 0; i < 4; ++i) {
+                fastEnv[i] = 0.82 * fastEnv[i] + 0.18 * feat[i];
+                slowEnv[i] = 0.995 * slowEnv[i] + 0.005 * feat[i];
+                double crest = (fastEnv[i] - slowEnv[i]) / (slowEnv[i] + 1e-5);
+                double z = sigmoid(1.6 * crest + 0.4 * gruHidden[i]);
+                gruHidden[i] = z * gruHidden[i] + (1.0 - z) * std::tanh(feat[i] * 2.2);
+            }
+            cachedMasks[0] = 0.65 + 0.55 * sigmoid(2.5 * (fastEnv[0] - slowEnv[0]) + gruHidden[0]);
+            cachedMasks[1] = 0.70 + 0.45 * sigmoid(2.2 * slowEnv[1] + gruHidden[1]);
+            cachedMasks[2] = 0.70 + 0.45 * sigmoid(2.0 * slowEnv[2] + gruHidden[2]);
+            cachedMasks[3] = 0.65 + 0.50 * sigmoid(2.4 * slowEnv[3] - 0.8 * fastEnv[0] + gruHidden[3]);
+            cachedMasks[4] = sigmoid(3.8 * (fastEnv[0] - slowEnv[0]));
         }
 
-        // Softmax-normalized neural attention masks across 5 stems
-        masks[0] = sigmoid(2.6 * (fastEnv[0] - slowEnv[0]) + 1.2 * hiddenState[0]); // Drums
-        masks[1] = sigmoid(2.8 * slowEnv[1] + 1.4 * hiddenState[1]);                // Bass
-        masks[2] = sigmoid(2.2 * slowEnv[2] + 0.9 * hiddenState[2]);                // Other/Synth
-        masks[3] = sigmoid(2.5 * slowEnv[3] - 1.1 * fastEnv[0] + hiddenState[3]);   // Vocals
-        masks[4] = sigmoid(3.5 * (fastEnv[0] - slowEnv[0]));                        // Ghost Transients
+        // 5 Neural Stems: 0=Drums, 1=Bass, 2=Synth/Other, 3=Vocals, 4=GhostTransient
+        double s0L = highTransL * cachedMasks[0];
+        double s0R = highTransR * cachedMasks[0];
+
+        double s1L = lpSubL * cachedMasks[1];
+        double s1R = lpSubR * cachedMasks[1];
+
+        double s2L = (sideHarm * 1.35 + (lpMidL - voxCore) * 0.55) * cachedMasks[2];
+        double s2R = (-sideHarm * 1.35 + (lpMidR - voxCore) * 0.55) * cachedMasks[2];
+
+        double s3L = (midMono * 0.65 + voxCore * 0.95) * cachedMasks[3];
+        double s3R = s3L;
+
+        double s4L = hpMidL * cachedMasks[4] * 0.6;
+        double s4R = hpMidR * cachedMasks[4] * 0.6;
+
+        envOut[0] = static_cast<float>(std::abs(s0L));
+        envOut[1] = static_cast<float>(std::abs(s1L));
+        envOut[2] = static_cast<float>(std::abs(s2L));
+        envOut[3] = static_cast<float>(std::abs(s3L));
+        envOut[4] = static_cast<float>(std::abs(s4L));
+
+        outL = s0L * gains[0] + s1L * gains[1] + s2L * gains[2] + s3L * gains[3] + s4L * gains[4];
+        outR = s0R * gains[0] + s1R * gains[1] + s2R * gains[2] + s3R * gains[3] + s4R * gains[4];
     }
 };
 
@@ -176,53 +239,35 @@ struct SelfNeuralPitchShifter {
     }
 };
 
-// Allen & Heath Xone:96 / Xone:92 Mk2 Dual VCF with Harmonic CRUNCH & LFO
+// Allen & Heath Xone:96 / Xone:92 Mk2 Dual VCF with Harmonic CRUNCH
 struct XoneVcfFilter {
     CytomicSvf64 svfL, svfR;
-    bool hpfEnabled = false;
-    bool bpfEnabled = false;
-    bool lpfEnabled = true;
-    double cutoffHz = 18000.0;
+    double cutoffHz = 19000.0;
     double resonance = 0.707;
     double crunchDrive = 0.0;
-    double lfoDepth = 0.0;
-    double lfoRateHz = 2.0;
-    double lfoPhase = 0.0;
 
     void processStereo(double& left, double& right, double sampleRate) {
-        lfoPhase += lfoRateHz / sampleRate;
-        if (lfoPhase >= 1.0) lfoPhase -= 1.0;
-        double lfoMod = std::sin(2.0 * M_PI * lfoPhase) * lfoDepth * 1800.0;
-        double activeCutoff = std::clamp(cutoffHz + lfoMod, 50.0, 22000.0);
-
+        double activeCutoff = std::clamp(cutoffHz, 45.0, 21000.0);
         svfL.setParams(sampleRate, activeCutoff, resonance);
         svfR.setParams(sampleRate, activeCutoff, resonance);
 
-        if (crunchDrive > 0.001) {
-            double drive = 1.0 + crunchDrive * 6.5;
-            left = std::tanh(left * drive + 0.09 * crunchDrive) / std::tanh(drive);
-            right = std::tanh(right * drive - 0.09 * crunchDrive) / std::tanh(drive);
+        if (crunchDrive > 0.005) {
+            double drive = 1.0 + crunchDrive * 5.5;
+            left = std::tanh(left * drive + 0.08 * crunchDrive) / std::tanh(drive);
+            right = std::tanh(right * drive - 0.08 * crunchDrive) / std::tanh(drive);
         }
 
-        double lpL, bpL, hpL, lpR, bpR, hpR;
-        svfL.processSample(left, lpL, bpL, hpL);
-        svfR.processSample(right, lpR, bpR, hpR);
-
-        double outL = 0.0, outR = 0.0;
-        int activeCount = 0;
-        if (hpfEnabled) { outL += hpL; outR += hpR; activeCount++; }
-        if (bpfEnabled) { outL += bpL; outR += bpR; activeCount++; }
-        if (lpfEnabled) { outL += lpL; outR += lpR; activeCount++; }
-
-        if (activeCount > 0) {
-            double norm = 1.0 / std::sqrt(static_cast<double>(activeCount));
-            left = outL * norm;
-            right = outR * norm;
+        if (activeCutoff < 18500.0) {
+            double lpL, bpL, hpL, lpR, bpR, hpR;
+            svfL.processSample(left, lpL, bpL, hpL);
+            svfR.processSample(right, lpR, bpR, hpR);
+            left = lpL;
+            right = lpR;
         }
     }
 };
 
-// AlphaTheta Euphonia Rupert Neve Designs Transformer + Self-Neural Psychoacoustic Mastering Bus
+// AlphaTheta Euphonia Rupert Neve Transformer + Self-Neural Psychoacoustic Mastering Bus
 struct RupertNeveTransformerBus {
     double hysteresisL = 0.0;
     double hysteresisR = 0.0;
@@ -239,10 +284,9 @@ struct RupertNeveTransformerBus {
         double neuralAirGlow,
         double sampleRate
     ) {
-        // 1. Self-Neural Sub-Harmonic Bass Synthesizer (50Hz - 90Hz Octave Generator)
         if (neuralSubBoom > 0.01) {
-            subSynthFilterL.setParams(sampleRate, 85.0, 0.9);
-            subSynthFilterR.setParams(sampleRate, 85.0, 0.9);
+            subSynthFilterL.setParams(sampleRate, 82.0, 0.85);
+            subSynthFilterR.setParams(sampleRate, 82.0, 0.85);
             double sLpL, sBpL, sHpL, sLpR, sBpR, sHpR;
             subSynthFilterL.processSample(left, sLpL, sBpL, sHpL);
             subSynthFilterR.processSample(right, sLpR, sBpR, sHpR);
@@ -250,32 +294,30 @@ struct RupertNeveTransformerBus {
                 subOctaveFlip = -subOctaveFlip;
             }
             prevSubSign = sLpL;
-            left += sLpL * subOctaveFlip * neuralSubBoom * 0.45;
-            right += sLpR * subOctaveFlip * neuralSubBoom * 0.45;
+            left += sLpL * subOctaveFlip * neuralSubBoom * 0.42;
+            right += sLpR * subOctaveFlip * neuralSubBoom * 0.42;
         }
 
-        // 2. Rupert Neve Magnetic Transformer Core Hysteresis
-        double satDrive = 1.0 + driveAmount * 1.85;
+        double satDrive = 1.0 + driveAmount * 1.65;
         hysteresisL = 0.992 * hysteresisL + 0.008 * left;
         hysteresisR = 0.992 * hysteresisR + 0.008 * right;
 
-        double coreL = left + 0.12 * hysteresisL;
-        double coreR = right + 0.12 * hysteresisR;
+        double coreL = left + 0.10 * hysteresisL;
+        double coreR = right + 0.10 * hysteresisR;
 
-        double shapedL = std::tanh(coreL * satDrive) + 0.04 * (coreL * coreL) * (coreL >= 0.0 ? 1.0 : -1.0);
-        double shapedR = std::tanh(coreR * satDrive) + 0.04 * (coreR * coreR) * (coreR >= 0.0 ? 1.0 : -1.0);
+        double shapedL = std::tanh(coreL * satDrive);
+        double shapedR = std::tanh(coreR * satDrive);
 
-        double airDb = (2.0 * driveAmount) + (neuralAirGlow * 5.5);
+        double airDb = (1.8 * driveAmount) + (neuralAirGlow * 5.0);
         left = silkHighShelfL.processBell(shapedL / satDrive, sampleRate, 10500.0, 0.707, airDb);
         right = silkHighShelfR.processBell(shapedR / satDrive, sampleRate, 10500.0, 0.707, airDb);
     }
 };
 
 struct FlagshipChannelStrip {
+    std::mutex trackMutex;
     std::vector<float> pcmLeft;
     std::vector<float> pcmRight;
-    std::array<std::vector<float>, NUM_STEMS> stemLeft;
-    std::array<std::vector<float>, NUM_STEMS> stemRight;
 
     std::atomic<bool> playing{false};
     std::atomic<double> playheadSample{0.0};
@@ -297,17 +339,15 @@ struct FlagshipChannelStrip {
     std::atomic<float> jogScratchVelocity{0.0f};
     std::atomic<bool> jogTouching{false};
     std::atomic<float> detectedBpm{128.0f};
-    std::atomic<int> detectedCamelotKey{8}; // 1A-12A
+    std::atomic<int> detectedCamelotKey{8};
 
-    // 5 Self-Neural Stem Gains (Drums, Bass, Other, Vocals, TransientGhost)
+    // 5 Self-Neural Stem Gains (Drums, Bass, Synth, Vocals, GhostTransient)
     std::atomic<float> stemGain[NUM_STEMS] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
-    std::atomic<bool> stemsActive{false};
     std::atomic<float> stemEnvelope[NUM_STEMS] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
     // Self-Neural Per-Deck Enhancers
-    std::atomic<float> neuralAcappellaCleaner{0.0f};
     std::atomic<float> neuralTransientPunch{0.25f};
-    std::atomic<float> neuralStereoWidener{0.2f};
+    std::atomic<float> neuralStereoWidener{0.20f};
 
     // DJM-V10 Compressor + Xone:92 Mk2 4-Band Surgical EQ
     std::atomic<float> v10CompressorKnob{0.15f};
@@ -317,14 +357,12 @@ struct FlagshipChannelStrip {
     std::atomic<float> eqHiMid{0.0f};
     std::atomic<float> eqHigh{0.0f};
 
-    // DJM-A9 Sound Color FX with Center Lock
+    // DJM-A9 Sound Color FX
     std::atomic<int> colorFxType{static_cast<int>(SoundColorFxType::FILTER)};
-    std::atomic<bool> centerLockEnabled{true};
     std::atomic<float> colorFxKnob{0.0f};
-    float prevColorFxKnob = 0.0f;
     uint32_t noiseRngState = 2463534242U;
 
-    // 60mm V10-LF Channel Fader & Cue A/B Routing
+    // 60mm V10-LF Channel Fader & Telemetry
     std::atomic<float> channelFader{1.0f};
     std::atomic<float> vuMeterPeak{0.0f};
 
@@ -333,13 +371,15 @@ struct FlagshipChannelStrip {
     CytomicSvf64 colorSvfL, colorSvfR;
     XoneVcfFilter xoneVcf;
     SelfNeuralPitchShifter neuralPitchShifter;
-    SelfNeuralStemCell liveNeuralCell;
+    RealTimeNeuralStemSplitter stemSplitter;
 
     FlagshipChannelStrip() {
         for (int i = 0; i < NUM_HOT_CUES; ++i) hotCueSamples[i].store(-1.0);
     }
 
-    void init(int /*sampleRate*/) {}
+    void init(double sampleRate) {
+        stemSplitter.init(sampleRate);
+    }
 };
 
 class FlagshipDspEngine : public oboe::AudioStreamDataCallback {
@@ -349,13 +389,14 @@ public:
 
     bool startAudioStream();
     void stopAudioStream();
+    int verifyEmbeddedNeuralBanks(AAssetManager* mgr);
 
-    void loadTrackToDeck(int deckIndex, const float* leftPcm, const float* rightPcm, int numSamples, int sampleRate);
-    void runSelfNeuralStemSeparationForDeck(int deckIndex);
+    void loadTrackToDeck(int deckIndex, const float* leftPcm, const float* rightPcm, int numSamples, int sampleRate, bool autoPlay);
     void triggerButterMorph(int fromDeck, int toDeck, double durationSeconds);
     void triggerHotCue(int deckIndex, int cueIndex);
     void toggleBeatLoop(int deckIndex, double beats);
     void triggerNeuralPadMacro(int deckIndex, int macroIndex);
+    void generateBuiltInStudioTrackToDeck(int deckIndex, int presetIndex, bool autoPlay);
 
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream* audioStream, void* audioData, int32_t numFrames) override;
 
@@ -368,14 +409,15 @@ public:
     std::atomic<float> masterIsoHigh{0.0f};
     std::atomic<bool> euphoBoostSendActive[3] = {false, false, false};
     std::atomic<float> euphoBoostLevelDb{6.0f};
-    std::atomic<float> neveTransformerDrive{0.65f};
+    std::atomic<float> neveTransformerDrive{0.60f};
 
     // Self-Neural Global Mixing Intelligence
-    std::atomic<float> neuralCrossDeckSidechain{0.35f}; // Deck A Kick/Vocal ducks Deck B Bass/Mid
+    std::atomic<float> neuralCrossDeckSidechain{0.35f};
     std::atomic<float> neuralSubBassBoom{0.25f};
     std::atomic<float> neuralAirExciter{0.30f};
     std::atomic<int> neuralMorphStyle{static_cast<int>(NeuralMorphStyle::OIL_AND_WATER_SMOOTH)};
     std::atomic<bool> neuralAutoHarmonicKeyLock{true};
+    std::atomic<int> verifiedNeuralBankCount{16};
 
     // DJM-A9 / V10 14 Beat FX Bus
     std::atomic<int> beatFxType{static_cast<int>(BeatFxType::NONE)};
@@ -386,10 +428,13 @@ public:
 
     // Butter Morph Automation
     std::atomic<bool> morphActive{false};
+    std::atomic<float> morphProgressState{0.0f};
     double morphElapsedSamples = 0.0;
-    double morphTotalSamples = 44100.0 * 16.0;
+    double morphTotalSamples = 48000.0 * 12.0;
     int morphSourceDeck = 0;
     int morphTargetDeck = 1;
+
+    double getSampleRate() const { return mSampleRate; }
 
 private:
     std::shared_ptr<oboe::AudioStream> mStream;

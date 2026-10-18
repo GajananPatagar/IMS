@@ -12,8 +12,8 @@ android {
         applicationId = "com.apexdj.butter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0.0-SelfNeural-1Lakh-Edition"
+        versionCode = 3
+        versionName = "3.0.0-1GB-SelfNeural-AutoDJ"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -27,12 +27,19 @@ android {
         }
     }
 
+    androidResources {
+        noCompress += listOf("nwt", "onnx", "ort", "wav", "flac", "bin")
+    }
+
     signingConfigs {
         create("release") {
             storeFile = file(System.getenv("ANDROID_KEYSTORE_FILE") ?: "/tmp/release.keystore")
             storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "apexdj123"
             keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "apexdj"
             keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: "apexdj123"
+            enableV1Signing = false
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 

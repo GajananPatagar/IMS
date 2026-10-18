@@ -10,7 +10,7 @@
     <application
         android:allowBackup="true"
         android:largeHeap="true"
-        android:label="ApexDJ Self-Neural Mixer"
+        android:label="ApexDJ 1GB Neural Mixer"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
