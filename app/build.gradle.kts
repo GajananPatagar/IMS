@@ -12,8 +12,8 @@ android {
         applicationId = "com.apexdj.butter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0-Flagship-1Crore-Edition"
+        versionCode = 2
+        versionName = "2.0.0-SelfNeural-1Lakh-Edition"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -25,10 +25,6 @@ android {
                 arguments += listOf("-DANDROID_STL=c++_shared")
             }
         }
-    }
-
-    androidResources {
-        noCompress += listOf("onnx", "ort", "wav", "flac")
     }
 
     signingConfigs {
@@ -74,7 +70,6 @@ android {
 
 dependencies {
     implementation("com.google.oboe:oboe:1.9.0")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 

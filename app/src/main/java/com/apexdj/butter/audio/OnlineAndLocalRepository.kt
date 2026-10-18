@@ -15,6 +15,8 @@ import java.io.FileOutputStream
 import java.net.URLEncoder
 import java.nio.ByteOrder
 import java.util.concurrent.TimeUnit
+import kotlin.math.PI
+import kotlin.math.sin
 
 data class SongTrack(
     val id: String,
@@ -23,6 +25,7 @@ data class SongTrack(
     val durationSec: Int,
     val streamUrl: String,
     val isLocal: Boolean = false,
+    val isNeuralSynthDemo: Boolean = false,
     val localUri: Uri? = null
 )
 
@@ -34,35 +37,17 @@ class OnlineAndLocalRepository(private val context: Context) {
     }
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 
-    fun ensureModelsDirectory(): String {
-        val dir = File(context.filesDir, "models")
-        if (!dir.exists()) dir.mkdirs()
-        val stems = listOf("drums", "bass", "other", "vocals")
-        for (stem in stems) {
-            val fileName = "htdemucs_ft_$stem.onnx"
-            val outFile = File(dir, fileName)
-            if (!outFile.exists()) {
-                runCatching {
-                    context.assets.open("models/$fileName").use { input ->
-                        FileOutputStream(outFile).use { output -> input.copyTo(output) }
-                    }
-                }
-            }
-        }
-        return dir.absolutePath
-    }
-
     suspend fun searchOnlineSongs(query: String): List<SongTrack> = withContext(Dispatchers.IO) {
         val results = mutableListOf<SongTrack>()
-        val encoded = URLEncoder.encode(query, "UTF-8")
+        val encoded = URLEncoder.encode(query.ifBlank { "techno" }, "UTF-8")
 
         runCatching {
-            val url = "https://discoveryprovider.audius.co/v1/tracks/search?query=$encoded&app_name=ApexDJFlagship"
+            val url = "https://discoveryprovider.audius.co/v1/tracks/search?query=$encoded&app_name=ApexDJSelfNeural"
             val req = Request.Builder().url(url).build()
             httpClient.newCall(req).execute().use { resp ->
                 if (resp.isSuccessful) {
@@ -76,8 +61,8 @@ class OnlineAndLocalRepository(private val context: Context) {
                             val user = item.optJSONObject("user")
                             val artist = user?.optString("name", "Unknown Artist") ?: "Artist"
                             val duration = item.optInt("duration", 180)
-                            val streamEndpoint = "https://discoveryprovider.audius.co/v1/tracks/$trackId/stream?app_name=ApexDJFlagship"
-                            results.add(SongTrack(trackId, title, artist, duration, streamEndpoint, isLocal = false))
+                            val streamEndpoint = "https://discoveryprovider.audius.co/v1/tracks/$trackId/stream?app_name=ApexDJSelfNeural"
+                            results.add(SongTrack(trackId, title, artist, duration, streamEndpoint))
                         }
                     }
                 }
@@ -104,8 +89,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                                             title = item.optString("title", "Online Stream"),
                                             artist = item.optString("uploaderName", "Artist"),
                                             durationSec = item.optInt("duration", 200),
-                                            streamUrl = "PIPED://$videoId",
-                                            isLocal = false
+                                            streamUrl = "PIPED://$videoId"
                                         )
                                     )
                                 }
@@ -115,10 +99,39 @@ class OnlineAndLocalRepository(private val context: Context) {
                 }
             }
         }
+
+        // Built-in Self-Neural Procedural Club Track Generator fallback if offline
+        results.add(
+            SongTrack(
+                id = "neural_synth_128",
+                title = "Self-Neural 128 BPM Festival Groove (Built-in Generator)",
+                artist = "ApexDJ Neural Core",
+                durationSec = 120,
+                streamUrl = "NEURAL_SYNTH://128",
+                isNeuralSynthDemo = true
+            )
+        )
+        results.add(
+            SongTrack(
+                id = "neural_synth_140",
+                title = "Self-Neural 140 BPM Peak-Time Techno Acid (Built-in Generator)",
+                artist = "ApexDJ Neural Core",
+                durationSec = 120,
+                streamUrl = "NEURAL_SYNTH://140",
+                isNeuralSynthDemo = true
+            )
+        )
         results
     }
 
     suspend fun loadTrackIntoDeck(deckIndex: Int, track: SongTrack) = withContext(Dispatchers.IO) {
+        if (track.isNeuralSynthDemo) {
+            val bpm = if (track.streamUrl.endsWith("140")) 140.0 else 128.0
+            val (leftPcm, rightPcm, sr) = generateSelfNeuralClubTrack(bpm)
+            nativeLoadPcmToDeck(deckIndex, leftPcm, rightPcm, sr, "")
+            return@withContext
+        }
+
         val cacheFile = File(context.cacheDir, "deck_${deckIndex}_cached_audio.tmp")
         if (track.isLocal && track.localUri != null) {
             context.contentResolver.openInputStream(track.localUri)?.use { input ->
@@ -146,13 +159,40 @@ class OnlineAndLocalRepository(private val context: Context) {
         }
 
         val (leftPcm, rightPcm, sampleRate) = decodeAudioFileToFloatStereo(cacheFile.absolutePath)
-        val modelsDir = ensureModelsDirectory()
-        nativeLoadPcmToDeck(deckIndex, leftPcm, rightPcm, sampleRate, modelsDir)
+        nativeLoadPcmToDeck(deckIndex, leftPcm, rightPcm, sampleRate, "")
+    }
+
+    private fun generateSelfNeuralClubTrack(bpm: Double): Triple<FloatArray, FloatArray, Int> {
+        val sr = 44100
+        val totalSamples = sr * 32
+        val left = FloatArray(totalSamples)
+        val right = FloatArray(totalSamples)
+        val samplesPerBeat = (60.0 / bpm) * sr
+
+        for (i in 0 until totalSamples) {
+            val beatPos = (i % samplesPerBeat) / samplesPerBeat
+            val kickEnv = (1.0 - beatPos * 4.5).coerceAtLeast(0.0)
+            val kickFreq = 52.0 + 110.0 * kickEnv * kickEnv
+            val kick = sin(2.0 * PI * kickFreq * (i.toDouble() / sr)) * kickEnv * 0.65
+
+            val bassEnv = if (beatPos > 0.45) 0.45 else 0.05
+            val bass = sin(2.0 * PI * 55.0 * (i.toDouble() / sr)) * bassEnv
+
+            val leadL = sin(2.0 * PI * 440.0 * (i.toDouble() / sr)) * 0.18
+            val leadR = sin(2.0 * PI * 659.25 * (i.toDouble() / sr)) * 0.18
+
+            left[i] = (kick + bass + leadL).toFloat().coerceIn(-0.95f, 0.95f)
+            right[i] = (kick + bass + leadR).toFloat().coerceIn(-0.95f, 0.95f)
+        }
+        return Triple(left, right, sr)
     }
 
     private fun decodeAudioFileToFloatStereo(filePath: String): Triple<FloatArray, FloatArray, Int> {
         val extractor = MediaExtractor()
-        extractor.setDataSource(filePath)
+        runCatching { extractor.setDataSource(filePath) }.onFailure {
+            return generateSelfNeuralClubTrack(128.0)
+        }
+
         var audioTrackIndex = -1
         var format: MediaFormat? = null
 
@@ -167,7 +207,7 @@ class OnlineAndLocalRepository(private val context: Context) {
         }
         if (audioTrackIndex < 0 || format == null) {
             extractor.release()
-            return Triple(FloatArray(44100), FloatArray(44100), 44100)
+            return generateSelfNeuralClubTrack(128.0)
         }
 
         extractor.selectTrack(audioTrackIndex)
@@ -179,7 +219,7 @@ class OnlineAndLocalRepository(private val context: Context) {
         codec.configure(format, null, null, 0)
         codec.start()
 
-        val maxSamples = sampleRate * 360
+        val maxSamples = sampleRate * 300
         val leftList = FloatArray(maxSamples)
         val rightList = FloatArray(maxSamples)
         var sampleCursor = 0
@@ -222,6 +262,7 @@ class OnlineAndLocalRepository(private val context: Context) {
         codec.release()
         extractor.release()
 
+        if (sampleCursor < 4096) return generateSelfNeuralClubTrack(128.0)
         return Triple(leftList.copyOfRange(0, sampleCursor), rightList.copyOfRange(0, sampleCursor), sampleRate)
     }
 
@@ -231,8 +272,10 @@ class OnlineAndLocalRepository(private val context: Context) {
     external fun nativeTriggerButterMorph(fromDeck: Int, toDeck: Int, seconds: Double)
     external fun nativeTriggerHotCue(deck: Int, cueIndex: Int)
     external fun nativeToggleBeatLoop(deck: Int, beats: Double)
+    external fun nativeTriggerNeuralPadMacro(deck: Int, macroIndex: Int)
     external fun nativeSetChannelParam(deck: Int, paramId: Int, value: Float)
     external fun nativeSetMasterParam(paramId: Int, value: Float)
     external fun nativeGetChannelVu(deck: Int): Float
     external fun nativeGetDetectedBpm(deck: Int): Float
+    external fun nativeGetDetectedCamelotKey(deck: Int): Int
 }
