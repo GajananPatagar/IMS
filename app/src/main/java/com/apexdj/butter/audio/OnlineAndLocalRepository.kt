@@ -45,15 +45,14 @@ data class DecodedPcmCacheEntry(
 
 data class MixCompatibilityBadge(
     val matchScorePercent: Int,
-    val targetLabel: String,      // e.g. "★ 99% PERFECT FOR DECK B" or "★ 98% NEXT QUEUE MATCH"
-    val recommendedDeck: Int,     // 0 = Deck A, 1 = Deck B
-    val transitionAdvice: String, // e.g. "AUTO 4-STAGE NEURAL BLEND"
+    val targetLabel: String,
+    val recommendedDeck: Int,
+    val transitionAdvice: String,
     val isTopPick: Boolean
 )
 
 class OnlineAndLocalRepository(private val context: Context) {
 
-    // In-memory RAM Pre-Buffer Cache (stores up to 4 pre-decoded songs for 0ms transitions)
     private val prebufferedPcmCache = ConcurrentHashMap<String, DecodedPcmCacheEntry>()
 
     init {
@@ -98,7 +97,6 @@ class OnlineAndLocalRepository(private val context: Context) {
 
     suspend fun scanOfflineLibrary(): List<SongTrack> = withContext(Dispatchers.IO) {
         val offlineList = mutableListOf<SongTrack>()
-
         runCatching {
             val projection = arrayOf(
                 MediaStore.Audio.Media._ID,
@@ -157,7 +155,6 @@ class OnlineAndLocalRepository(private val context: Context) {
         val results = mutableListOf<SongTrack>()
         val encoded = URLEncoder.encode(query.ifBlank { "Calvin Harris Tiesto Anyma" }, "UTF-8")
 
-        // 1. Apple iTunes High-Bitrate AAC Stream Search
         runCatching {
             val url = "https://itunes.apple.com/search?term=$encoded&entity=song&limit=20"
             val req = Request.Builder().url(url).build()
@@ -193,7 +190,6 @@ class OnlineAndLocalRepository(private val context: Context) {
             }
         }
 
-        // 2. Deezer Global Club Track Search
         runCatching {
             val url = "https://api.deezer.com/search?q=$encoded&limit=14"
             val req = Request.Builder().url(url).build()
@@ -228,51 +224,9 @@ class OnlineAndLocalRepository(private val context: Context) {
                 }
             }
         }
-
-        // 3. Audius Full-Length Electronic Stream API
-        runCatching {
-            val url = "https://discoveryprovider.audius.co/v1/tracks/search?query=$encoded&app_name=ApexDJAutonomousPro"
-            val req = Request.Builder().url(url).build()
-            httpClient.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    val json = JSONObject(resp.body?.string() ?: "{}")
-                    val data = json.optJSONArray("data")
-                    if (data != null) {
-                        for (i in 0 until minOf(data.length(), 10)) {
-                            val item = data.getJSONObject(i)
-                            val trackId = item.optString("id")
-                            val title = item.optString("title", "Audius Stream")
-                            val user = item.optJSONObject("user")
-                            val artist = user?.optString("name", "Producer") ?: "Producer"
-                            val duration = item.optInt("duration", 180)
-                            if (duration in 30..360) {
-                                val hash = abs((title + artist).hashCode())
-                                val streamEndpoint = "https://discoveryprovider.audius.co/v1/tracks/$trackId/stream?app_name=ApexDJAutonomousPro"
-                                results.add(
-                                    SongTrack(
-                                        id = "au_$trackId",
-                                        title = title,
-                                        artist = artist,
-                                        durationSec = duration,
-                                        streamUrl = streamEndpoint,
-                                        estimatedBpm = 124f + (hash % 16).toFloat(),
-                                        camelotKey = 1 + (hash % 12)
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         results
     }
 
-    /**
-     * Evaluates harmonic Camelot wheel distance + BPM proximity against Deck A, Deck B, and Queue
-     * so both Online Search and Offline Library clearly highlight the Next Perfect Song and target Deck/Queue.
-     */
     fun evaluateMixCompatibility(
         track: SongTrack,
         deckABpm: Float,
@@ -322,8 +276,6 @@ class OnlineAndLocalRepository(private val context: Context) {
         val targetLabel = if (queueScore > score && queueTail != null) {
             "★ $queueScore% NEXT QUEUE MATCH (AFTER ${queueTail.title.take(10).uppercase()})$readyTag"
         } else {
-            "★ $score% PERFECT FOR $targetDeckName (${track.camelotKey}A • ${track.estimatedBpm.toInt()} BPM)$readyTag"
-        }else {
             "★ $score% PERFECT FOR $targetDeckName (${track.camelotKey}A • ${track.estimatedBpm.toInt()} BPM)$readyTag"
         }
 
