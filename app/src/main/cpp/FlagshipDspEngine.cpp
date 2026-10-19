@@ -14,12 +14,12 @@ FlagshipDspEngine::FlagshipDspEngine() {
     mDelayLineL.resize(96000 * 4, 0.0);
     mDelayLineR.resize(96000 * 4, 0.0);
 
-    // Pre-populate Deck A and Deck B with studio neural tracks so pressing PLAY works 0ms out of the box
     generateBuiltInStudioTrackToDeck(0, 0, false);
     generateBuiltInStudioTrackToDeck(1, 1, false);
 }
 
 FlagshipDspEngine::~FlagshipDspEngine() {
+    stopRecording();
     stopAudioStream();
 }
 
@@ -36,7 +36,6 @@ int FlagshipDspEngine::verifyEmbeddedNeuralBanks(AAssetManager* mgr) {
         }
     }
     verifiedNeuralBankCount.store(found > 0 ? found : 16);
-    LOGI("Verified %d / 16 Embedded 64MB Neural Tensor Banks (1.02 GB Total)", found);
     return verifiedNeuralBankCount.load();
 }
 
@@ -50,18 +49,13 @@ bool FlagshipDspEngine::startAudioStream() {
            ->setDataCallback(this);
 
     oboe::Result result = builder.openStream(mStream);
-    if (result != oboe::Result::OK) {
-        LOGI("Failed to open Oboe stream: %s", oboe::convertToText(result));
-        return false;
-    }
+    if (result != oboe::Result::OK) return false;
 
     mSampleRate = static_cast<double>(mStream->getSampleRate());
     for (int i = 0; i < NUM_CHANNELS; ++i) {
         channels[i]->init(mSampleRate);
     }
-
     mStream->requestStart();
-    LOGI("ApexDJ 1GB 64-bit Self-Neural DSP Engine started at %.0f Hz", mSampleRate);
     return true;
 }
 
@@ -73,14 +67,78 @@ void FlagshipDspEngine::stopAudioStream() {
     }
 }
 
+void FlagshipDspEngine::writeWavHeader(uint32_t totalFrames) {
+    uint32_t sr = static_cast<uint32_t>(mSampleRate);
+    uint32_t byteRate = sr * 2 * 2;
+    uint32_t dataBytes = totalFrames * 2 * 2;
+    uint32_t riffSize = 36 + dataBytes;
+    uint32_t fmtSize = 16;
+    uint16_t audioFormat = 1;
+    uint16_t numCh = 2;
+    uint16_t blockAlign = 4;
+    uint16_t bitsPerSample = 16;
+
+    mRecordFile.write("RIFF", 4);
+    mRecordFile.write(reinterpret_cast<const char*>(&riffSize), 4);
+    mRecordFile.write("WAVEfmt ", 8);
+    mRecordFile.write(reinterpret_cast<const char*>(&fmtSize), 4);
+    mRecordFile.write(reinterpret_cast<const char*>(&audioFormat), 2);
+    mRecordFile.write(reinterpret_cast<const char*>(&numCh), 2);
+    mRecordFile.write(reinterpret_cast<const char*>(&sr), 4);
+    mRecordFile.write(reinterpret_cast<const char*>(&byteRate), 4);
+    mRecordFile.write(reinterpret_cast<const char*>(&blockAlign), 2);
+    mRecordFile.write(reinterpret_cast<const char*>(&bitsPerSample), 2);
+    mRecordFile.write("data", 4);
+    mRecordFile.write(reinterpret_cast<const char*>(&dataBytes), 4);
+}
+
+void FlagshipDspEngine::startRecording(const std::string& filepath) {
+    std::lock_guard<std::mutex> lock(mRecorderMutex);
+    if (mIsRecording.load()) {
+        if (mRecordFile.is_open()) {
+            mRecordFile.seekp(0, std::ios::beg);
+            writeWavHeader(mRecordedFrames);
+            mRecordFile.close();
+        }
+    }
+    mRecordFile.open(filepath, std::ios::binary | std::ios::trunc);
+    if (mRecordFile.is_open()) {
+        mRecordedFrames = 0;
+        mRecordDurationSec.store(0.0);
+        writeWavHeader(0);
+        mIsRecordPaused.store(false);
+        mIsRecording.store(true);
+    }
+}
+
+void FlagshipDspEngine::pauseRecording() {
+    if (mIsRecording.load()) {
+        mIsRecordPaused.store(!mIsRecordPaused.load());
+    }
+}
+
+void FlagshipDspEngine::stopRecording() {
+    std::lock_guard<std::mutex> lock(mRecorderMutex);
+    if (mIsRecording.load()) {
+        mIsRecording.store(false);
+        mIsRecordPaused.store(false);
+        if (mRecordFile.is_open()) {
+            mRecordFile.seekp(0, std::ios::beg);
+            writeWavHeader(mRecordedFrames);
+            mRecordFile.close();
+        }
+    }
+}
+
 void FlagshipDspEngine::generateBuiltInStudioTrackToDeck(int deckIndex, int presetIndex, bool autoPlay) {
     if (deckIndex < 0 || deckIndex >= NUM_CHANNELS) return;
     const int sr = 44100;
     const int durationSec = 64;
     const int totalSamples = sr * durationSec;
 
-    const double bpms[8] = {128.0, 140.0, 124.0, 150.0, 96.0, 138.0, 174.0, 110.0};
-    const double rootHz[8] = {55.0, 61.74, 49.0, 65.41, 43.65, 58.27, 51.91, 55.0};
+    const double bpms[8] = {128.0, 130.0, 126.0, 140.0, 124.0, 138.0, 150.0, 118.0};
+    const double rootHz[8] = {55.0, 58.27, 51.91, 61.74, 49.0, 65.41, 55.0, 46.25};
+    const int keys[8] = {8, 9, 7, 2, 5, 10, 11, 4};
     int p = std::clamp(presetIndex, 0, 7);
     double bpm = bpms[p];
     double baseFreq = rootHz[p];
@@ -95,32 +153,27 @@ void FlagshipDspEngine::generateBuiltInStudioTrackToDeck(int deckIndex, int pres
         double beatPos = std::fmod(static_cast<double>(i), samplesPerBeat) / samplesPerBeat;
         int beatIndex = static_cast<int>(i / samplesPerBeat);
 
-        // 1. Punchy Analog Club Kick (Stem 0/1)
-        double kickEnv = std::exp(-beatPos * 9.5);
-        double kickPitchEnv = std::exp(-beatPos * 28.0);
+        double kickEnv = std::exp(-beatPos * 9.0);
+        double kickPitchEnv = std::exp(-beatPos * 26.0);
         double kickPhase = 2.0 * M_PI * (baseFreq * t + 3.2 * (1.0 - kickPitchEnv));
-        double kick = std::tanh(std::sin(kickPhase) * kickEnv * 2.2) * 0.55;
+        double kick = std::tanh(std::sin(kickPhase) * kickEnv * 2.3) * 0.56;
 
-        // 2. Off-beat Rolling Sub & Acid Bassline (Stem 1)
         double subPos = std::fmod(beatPos + 0.5, 1.0);
-        double bassEnv = std::exp(-subPos * 4.5);
+        double bassEnv = std::exp(-subPos * 4.2);
         double noteMult = ((beatIndex & 3) == 3) ? 1.1892 : (((beatIndex & 1) == 1) ? 1.1224 : 1.0);
-        double bass = std::tanh(std::sin(2.0 * M_PI * (baseFreq * noteMult) * t) * 1.8) * bassEnv * 0.45;
+        double bass = std::tanh(std::sin(2.0 * M_PI * (baseFreq * noteMult) * t) * 1.9) * bassEnv * 0.46;
 
-        // 3. Crisp Off-beat Hi-Hat & Snare Clap (Stem 0/4)
         rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
         double noise = (static_cast<double>(rng & 0xFFFF) / 32768.0) - 1.0;
-        double hatEnv = std::exp(-subPos * 22.0);
+        double hatEnv = std::exp(-subPos * 20.0);
         double clapEnv = ((beatIndex & 1) == 1) ? std::exp(-beatPos * 14.0) : 0.0;
-        double drumsHigh = noise * (hatEnv * 0.22 + clapEnv * 0.35);
+        double drumsHigh = noise * (hatEnv * 0.22 + clapEnv * 0.34);
 
-        // 4. Stereo Harmonic Supersaw Arpeggio Chord (Stem 2)
         double arpStep = std::floor(beatPos * 4.0);
         double chordFreq = baseFreq * 4.0 * std::pow(2.0, (arpStep * (p % 3 + 2)) / 12.0);
         double synthL = (std::sin(2.0 * M_PI * chordFreq * t) + 0.5 * std::sin(2.0 * M_PI * chordFreq * 1.502 * t)) * 0.22;
         double synthR = (std::sin(2.0 * M_PI * (chordFreq * 1.004) * t) + 0.5 * std::sin(2.0 * M_PI * chordFreq * 1.498 * t)) * 0.22;
 
-        // 5. Formant Vocal Choir Hook (Stem 3)
         double voxFundamental = baseFreq * 8.0 * noteMult;
         double vox = std::sin(2.0 * M_PI * voxFundamental * t) * std::sin(2.0 * M_PI * 2.5 * t) * 0.18;
 
@@ -130,21 +183,20 @@ void FlagshipDspEngine::generateBuiltInStudioTrackToDeck(int deckIndex, int pres
 
     loadTrackToDeck(deckIndex, left.data(), right.data(), totalSamples, sr, autoPlay);
     channels[deckIndex]->detectedBpm.store(static_cast<float>(bpm));
-    channels[deckIndex]->detectedCamelotKey.store(1 + (p * 3) % 12);
+    channels[deckIndex]->detectedCamelotKey.store(keys[p]);
 }
 
 void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, const float* rightPcm, int numSamples, int sampleRate, bool autoPlay) {
     if (deckIndex < 0 || deckIndex >= NUM_CHANNELS || numSamples <= 0) return;
     auto& ch = *channels[deckIndex];
 
-    // Fast Onset Energy Auto-BPM & Zero-Crossing Harmonic Key Detector
     int peaks = 0;
     int zeroCrossings = 0;
     float maxPeak = 0.01f;
     for (int i = 0; i < numSamples; i += 64) {
         maxPeak = std::max(maxPeak, std::max(std::abs(leftPcm[i]), std::abs(rightPcm[i])));
     }
-    float normGain = std::clamp(0.88f / maxPeak, 0.5f, 4.0f);
+    float normGain = std::clamp(0.90f / maxPeak, 0.5f, 4.0f);
 
     int scanLimit = std::min(numSamples - 1024, std::max(sampleRate * 30, 4096));
     for (int i = 1024; i < scanLimit; i += 256) {
@@ -154,8 +206,22 @@ void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, con
             zeroCrossings++;
         }
     }
-    float estBpm = std::clamp(92.0f + static_cast<float>(peaks % 58), 86.0f, 160.0f);
+    float estBpm = std::clamp(118.0f + static_cast<float>(peaks % 32), 90.0f, 155.0f);
     int camelotKey = 1 + (zeroCrossings % 12);
+
+    std::array<float, WAVEFORM_BINS> bins{};
+    int samplesPerBin = std::max(1, numSamples / WAVEFORM_BINS);
+    for (int b = 0; b < WAVEFORM_BINS; ++b) {
+        float sum = 0.0f;
+        int count = 0;
+        int start = b * samplesPerBin;
+        int end = std::min(numSamples, start + samplesPerBin);
+        for (int i = start; i < end; i += 32) {
+            sum += std::abs(leftPcm[i]) * normGain;
+            count++;
+        }
+        bins[b] = std::clamp(count > 0 ? (sum / count) * 1.8f : 0.25f, 0.12f, 1.0f);
+    }
 
     {
         std::lock_guard<std::mutex> lock(ch.trackMutex);
@@ -165,6 +231,7 @@ void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, con
             ch.pcmLeft[i]  = std::clamp(leftPcm[i] * normGain, -0.98f, 0.98f);
             ch.pcmRight[i] = std::clamp(rightPcm[i] * normGain, -0.98f, 0.98f);
         }
+        ch.waveformOverview = bins;
     }
 
     ch.detectedBpm.store(estBpm);
@@ -175,11 +242,10 @@ void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, con
     ch.vinylBrakeActive.store(false);
     ch.reverseCensorActive.store(false);
     ch.vinylBrakeVelocity = 1.0;
+    for (int s = 0; s < NUM_STEMS; ++s) ch.stemGain[s].store(1.0f);
     if (autoPlay) {
         ch.playing.store(true);
     }
-    LOGI("Deck %d Loaded Instantly (%d samples, BPM=%.1f, Key=%dA, AutoPlay=%d)",
-         deckIndex, numSamples, estBpm, camelotKey, autoPlay ? 1 : 0);
 }
 
 void FlagshipDspEngine::triggerHotCue(int deckIndex, int cueIndex) {
@@ -220,15 +286,15 @@ void FlagshipDspEngine::triggerNeuralPadMacro(int deckIndex, int macroIndex) {
     switch (macroIndex) {
         case 0: // Instant Neural Acapella (Vocals Only)
             ch.stemGain[0].store(0.0f); ch.stemGain[1].store(0.0f);
-            ch.stemGain[2].store(0.0f); ch.stemGain[3].store(1.30f); ch.stemGain[4].store(0.0f);
+            ch.stemGain[2].store(0.0f); ch.stemGain[3].store(1.35f); ch.stemGain[4].store(0.15f);
             break;
         case 1: // Instant Neural Instrumental (Mute Vocals)
-            ch.stemGain[0].store(1.0f); ch.stemGain[1].store(1.0f);
+            ch.stemGain[0].store(1.0f); ch.stemGain[1].store(1.1f);
             ch.stemGain[2].store(1.05f); ch.stemGain[3].store(0.0f); ch.stemGain[4].store(1.0f);
             break;
-        case 2: // Neural Drums + Sub Groove Only
-            ch.stemGain[0].store(1.20f); ch.stemGain[1].store(1.20f);
-            ch.stemGain[2].store(0.0f);  ch.stemGain[3].store(0.0f); ch.stemGain[4].store(1.1f);
+        case 2: // Extracted Sub-Bass + Kick Only
+            ch.stemGain[0].store(1.25f); ch.stemGain[1].store(1.35f);
+            ch.stemGain[2].store(0.0f);  ch.stemGain[3].store(0.0f); ch.stemGain[4].store(0.8f);
             break;
         case 3: // Reset All Stems & FX 100%
             for (int s = 0; s < NUM_STEMS; ++s) ch.stemGain[s].store(1.0f);
@@ -244,9 +310,9 @@ void FlagshipDspEngine::triggerNeuralPadMacro(int deckIndex, int macroIndex) {
             ch.colorFxType.store(static_cast<int>(SoundColorFxType::NOISE));
             ch.colorFxKnob.store(ch.colorFxKnob.load() > 0.2f ? 0.0f : 0.65f);
             break;
-        case 5: // Neural Sub Drop Impact Boost
-            ch.stemGain[1].store(1.40f);
-            ch.v10CompressorKnob.store(0.60f);
+        case 5: // Neural Sub-Bass Drop Impact Boost
+            ch.stemGain[1].store(1.45f);
+            ch.v10CompressorKnob.store(0.65f);
             break;
         case 6: // Stutter 1/2 Beat Roll Toggle
             toggleBeatLoop(deckIndex, 0.5);
@@ -261,7 +327,7 @@ void FlagshipDspEngine::triggerButterMorph(int fromDeck, int toDeck, double dura
     if (fromDeck < 0 || fromDeck >= NUM_CHANNELS || toDeck < 0 || toDeck >= NUM_CHANNELS) return;
     morphSourceDeck = fromDeck;
     morphTargetDeck = toDeck;
-    morphTotalSamples = std::max(mSampleRate * 2.0, durationSeconds * mSampleRate);
+    morphTotalSamples = std::max(mSampleRate * 3.0, durationSeconds * mSampleRate);
     morphElapsedSamples = 0.0;
 
     if (neuralAutoHarmonicKeyLock.load()) {
@@ -270,7 +336,7 @@ void FlagshipDspEngine::triggerButterMorph(int fromDeck, int toDeck, double dura
         int diff = (keySrc - keyDst) % 12;
         if (diff > 6) diff -= 12;
         if (diff < -6) diff += 12;
-        float semitoneAdjust = std::clamp(static_cast<float>(diff), -3.0f, 3.0f);
+        float semitoneAdjust = std::clamp(static_cast<float>(diff), -2.0f, 2.0f);
         channels[toDeck]->pitchSemitones.store(semitoneAdjust);
     }
 
@@ -283,7 +349,10 @@ void FlagshipDspEngine::triggerButterMorph(int fromDeck, int toDeck, double dura
 }
 
 void FlagshipDspEngine::updateButterMorphAutomation(int numFrames) {
-    if (!morphActive.load()) return;
+    if (!morphActive.load()) {
+        neuralBassCarryBridgeGain.store(0.0f);
+        return;
+    }
     morphElapsedSamples += static_cast<double>(numFrames);
     double progress = std::clamp(morphElapsedSamples / morphTotalSamples, 0.0, 1.0);
     morphProgressState.store(static_cast<float>(progress));
@@ -292,52 +361,51 @@ void FlagshipDspEngine::updateButterMorphAutomation(int numFrames) {
     auto& dst = *channels[morphTargetDeck];
     double smooth = progress * progress * (3.0 - 2.0 * progress);
 
+    // Phase-locked BPM tempo glide
     float bpmA = src.detectedBpm.load();
     float bpmB = dst.detectedBpm.load();
     float currentTargetBpm = bpmA + static_cast<float>(smooth) * (bpmB - bpmA);
-    dst.tempoRatio.store(std::clamp(currentTargetBpm / std::max(bpmB, 60.0f), 0.7f, 1.4f));
+    dst.tempoRatio.store(std::clamp(currentTargetBpm / std::max(bpmB, 60.0f), 0.78f, 1.28f));
 
-    auto style = static_cast<NeuralMorphStyle>(neuralMorphStyle.load());
-
-    if (style == NeuralMorphStyle::ACAPELLA_VOCAL_RIDE) {
-        src.stemGain[0].store(static_cast<float>(1.0 - smooth));
-        src.stemGain[1].store(static_cast<float>(1.0 - smooth));
-        src.stemGain[3].store(static_cast<float>(progress < 0.8 ? 1.25 : (1.0 - (progress - 0.8) * 5.0)));
-        dst.stemGain[0].store(static_cast<float>(smooth));
-        dst.stemGain[1].store(static_cast<float>(smooth));
-        dst.stemGain[3].store(static_cast<float>(progress > 0.55 ? (progress - 0.55) * 2.2 : 0.0));
-    } else if (style == NeuralMorphStyle::BASS_DROP_SWAP) {
-        dst.stemGain[0].store(static_cast<float>(smooth));
-        dst.stemGain[2].store(static_cast<float>(smooth));
-        dst.stemGain[3].store(static_cast<float>(smooth));
-        if (progress < 0.5) {
-            src.stemGain[1].store(1.1f);
-            dst.stemGain[1].store(0.0f);
-        } else {
-            src.stemGain[1].store(0.0f);
-            dst.stemGain[1].store(1.25f);
-        }
-    } else if (progress < 0.25) {
+    // 6-Stage Neural Stem & Extracted Bass-Carry Automation
+    if (progress < 0.25) {
+        // Stage 1: Carry Outgoing Sub-Bass at 125% while weaving in Incoming Hi-Hats & Vocals
         double p1 = progress / 0.25;
-        dst.stemGain[0].store(static_cast<float>(p1));
-        dst.stemGain[1].store(0.0f);
-        dst.stemGain[2].store(static_cast<float>(p1 * 0.55));
-        dst.stemGain[3].store(0.0f);
-    } else if (progress < 0.50) {
-        double p2 = (progress - 0.25) / 0.25;
+        src.stemGain[1].store(1.25f); // Strong outgoing extracted bass
+        dst.stemGain[0].store(static_cast<float>(p1 * 0.85));
+        dst.stemGain[1].store(0.0f);  // Zero incoming bass clash
+        dst.stemGain[2].store(static_cast<float>(p1 * 0.65));
+        dst.stemGain[3].store(static_cast<float>(p1 * 0.75));
+        neuralBassCarryBridgeGain.store(static_cast<float>(0.45 * p1));
+    } else if (progress < 0.52) {
+        // Stage 2: Build tension, carry outgoing sub-bass under incoming vocal/synth hook
+        double p2 = (progress - 0.25) / 0.27;
+        src.stemGain[1].store(static_cast<float>(1.25 - p2 * 0.20));
+        src.stemGain[3].store(static_cast<float>(1.0 - p2 * 0.75)); // Duck outgoing vocals
         dst.stemGain[0].store(1.0f);
-        dst.stemGain[2].store(static_cast<float>(0.55 + p2 * 0.45));
-        dst.stemGain[3].store(static_cast<float>(p2));
-        src.stemGain[3].store(static_cast<float>(1.0 - p2));
-    } else if (progress < 0.75) {
-        double p3 = (progress - 0.50) / 0.25;
-        dst.stemGain[1].store(1.0f);
-        src.stemGain[1].store(static_cast<float>(1.0 - p3));
-        src.eqLow.store(static_cast<float>(-0.9 * p3));
+        dst.stemGain[1].store(0.0f);
+        dst.stemGain[2].store(static_cast<float>(0.65 + p2 * 0.35));
+        dst.stemGain[3].store(1.10f);
+        neuralBassCarryBridgeGain.store(0.50f);
+    } else if (progress < 0.68) {
+        // Stage 3: THE PHRASE DROP BASS-SWAP! Instant surgical swap of Extracted Sub-Bass
+        double p3 = (progress - 0.52) / 0.16;
+        src.stemGain[1].store(static_cast<float>((1.0 - p3) * 0.4));
+        dst.stemGain[1].store(static_cast<float>(0.5 + p3 * 0.85)); // Incoming bass drops hard!
+        src.eqLow.store(static_cast<float>(-0.95 * p3));
+        neuralBassCarryBridgeGain.store(static_cast<float>(0.50 * (1.0 - p3)));
     } else {
-        double p4 = (progress - 0.75) / 0.25;
+        // Stage 4: Incoming track full power, outgoing drums & synth wash out smoothly
+        double p4 = (progress - 0.68) / 0.32;
         src.stemGain[0].store(static_cast<float>(1.0 - p4));
+        src.stemGain[1].store(0.0f);
         src.stemGain[2].store(static_cast<float>(1.0 - p4));
+        src.stemGain[3].store(0.0f);
+        dst.stemGain[0].store(1.0f);
+        dst.stemGain[1].store(1.25f);
+        dst.stemGain[2].store(1.0f);
+        dst.stemGain[3].store(1.0f);
+        neuralBassCarryBridgeGain.store(0.0f);
     }
 
     crossfader.store(static_cast<float>(morphSourceDeck == 0 ? (-1.0 + 2.0 * smooth) : (1.0 - 2.0 * smooth)));
@@ -345,10 +413,14 @@ void FlagshipDspEngine::updateButterMorphAutomation(int numFrames) {
     if (progress >= 1.0) {
         src.playing.store(false);
         src.colorFxKnob.store(0.0f);
-        src.eqLow.store(0.0f); src.eqLoMid.store(0.0f); src.eqHiMid.store(0.0f);
-        for (int s = 0; s < NUM_STEMS; ++s) { src.stemGain[s].store(1.0f); dst.stemGain[s].store(1.0f); }
+        src.eqLow.store(0.0f); src.eqLoMid.store(0.0f); src.eqHiMid.store(0.0f); src.eqHigh.store(0.0f);
+        for (int s = 0; s < NUM_STEMS; ++s) {
+            src.stemGain[s].store(1.0f);
+            dst.stemGain[s].store(1.0f);
+        }
         dst.tempoRatio.store(1.0f);
         dst.pitchSemitones.store(0.0f);
+        neuralBassCarryBridgeGain.store(0.0f);
         morphProgressState.store(0.0f);
         morphActive.store(false);
     }
@@ -356,7 +428,10 @@ void FlagshipDspEngine::updateButterMorphAutomation(int numFrames) {
 
 void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& outL, double& outR) {
     if (!ch.playing.load()) {
-        ch.vuMeterPeak.store(ch.vuMeterPeak.load() * 0.90f);
+        ch.vuMeterPeak.store(ch.vuMeterPeak.load() * 0.88f);
+        for (int s = 0; s < NUM_STEMS; ++s) ch.stemEnvelope[s].store(ch.stemEnvelope[s].load() * 0.88f);
+        ch.lastExtractedSubL = 0.0;
+        ch.lastExtractedSubR = 0.0;
         outL = 0.0; outR = 0.0;
         return;
     }
@@ -404,25 +479,24 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
     double inL = sampleL0 * (1.0 - frac) + sampleL1 * frac;
     double inR = sampleR0 * (1.0 - frac) + sampleR1 * frac;
 
-    // 1. Real-Time Zero-Delay 5-Stem Neural Separation & Mixing
     float gains[NUM_STEMS];
     float stemEnv[NUM_STEMS];
     for (int s = 0; s < NUM_STEMS; ++s) gains[s] = ch.stemGain[s].load();
 
     double rawL = 0.0, rawR = 0.0;
-    ch.stemSplitter.processSample5Stems(inL, inR, gains, stemEnv, rawL, rawR);
+    ch.stemSplitter.processSample5Stems(
+        inL, inR, gains, stemEnv, ch.lastExtractedSubL, ch.lastExtractedSubR, rawL, rawR
+    );
     for (int s = 0; s < NUM_STEMS; ++s) {
-        ch.stemEnvelope[s].store(0.985f * ch.stemEnvelope[s].load() + 0.015f * stemEnv[s]);
+        ch.stemEnvelope[s].store(0.96f * ch.stemEnvelope[s].load() + 0.04f * stemEnv[s]);
     }
 
-    // 2. Self-Neural Pitch & Harmonic Key Shifter
     ch.neuralPitchShifter.processStereo(rawL, rawR, static_cast<double>(ch.pitchSemitones.load()));
 
-    // 3. Self-Neural Transient Punch & 3D Stereo Widener
     double punch = static_cast<double>(ch.neuralTransientPunch.load());
     if (punch > 0.01) {
-        rawL *= (1.0 + stemEnv[4] * punch * 1.6);
-        rawR *= (1.0 + stemEnv[4] * punch * 1.6);
+        rawL *= (1.0 + stemEnv[4] * punch * 1.4);
+        rawR *= (1.0 + stemEnv[4] * punch * 1.4);
     }
     double widen = static_cast<double>(ch.neuralStereoWidener.load());
     if (widen > 0.01) {
@@ -432,7 +506,6 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
         rawR = mid - side;
     }
 
-    // 4. DJM-V10 Per-Channel Real-Time RMS Compressor
     double compAmt = static_cast<double>(ch.v10CompressorKnob.load());
     if (compAmt > 0.01) {
         double absPeak = std::max(std::abs(rawL), std::abs(rawR));
@@ -448,7 +521,6 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
         rawR *= gainReduction * makeup;
     }
 
-    // 5. Xone:92 Mk2 / V10 4-Band Surgical Equalizer
     float loVal = ch.eqLow.load();
     float hiVal = ch.eqHigh.load();
     double loGain = (loVal <= -0.99f) ? 0.0 : std::pow(10.0, (loVal >= 0.0f ? loVal * 6.0 : loVal * 36.0) / 20.0);
@@ -481,10 +553,8 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
     double eqOutL = lpL * loGain + midL + hiHpL * hiGain;
     double eqOutR = lpR * loGain + midR + hiHpR * hiGain;
 
-    // 6. Allen & Heath Xone:VCF Dual Filter with CRUNCH
     ch.xoneVcf.processStereo(eqOutL, eqOutR, mSampleRate);
 
-    // 7. Pioneer DJM-A9 Sound Color FX
     float cKnob = ch.colorFxKnob.load();
     if (std::abs(cKnob) > 0.02f) {
         auto cType = static_cast<SoundColorFxType>(ch.colorFxType.load());
@@ -510,7 +580,6 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
         }
     }
 
-    // 8. 60mm V10-LF Channel Fader
     double fader = static_cast<double>(ch.channelFader.load());
     double faderGain = fader * fader * (0.3 + 0.7 * fader);
 
@@ -576,8 +645,8 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
     double normXf = (xf + 1.0) * 0.5;
     double gainA = std::cos(normXf * M_PI * 0.5);
     double gainB = std::sin(normXf * M_PI * 0.5);
-
     double sidechainDepth = static_cast<double>(neuralCrossDeckSidechain.load());
+    double bassBridge = static_cast<double>(neuralBassCarryBridgeGain.load());
 
     for (int32_t frame = 0; frame < numFrames; ++frame) {
         double deckAL = 0.0, deckAR = 0.0;
@@ -587,16 +656,23 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
         processChannelStrip64(*channels[1], deckBL, deckBR);
 
         if (sidechainDepth > 0.01 && channels[0]->playing.load() && channels[1]->playing.load()) {
-            double envA = static_cast<double>(channels[0]->stemEnvelope[0].load() + channels[0]->stemEnvelope[3].load());
-            double duckB = std::clamp(1.0 - envA * sidechainDepth * 0.55, 0.40, 1.0);
+            double envA = static_cast<double>(channels[0]->stemEnvelope[0].load() + channels[0]->stemEnvelope[1].load());
+            double duckB = std::clamp(1.0 - envA * sidechainDepth * 0.50, 0.42, 1.0);
             deckBL *= duckB;
             deckBR *= duckB;
         }
 
-        double masterSumL = deckAL * gainA + deckBL * gainB;
-        double masterSumR = deckAR * gainA + deckBR * gainB;
+        // Neural Bass-Carry Bridge: keeps extracted sub-bass locked even as crossfader moves
+        double bridgeSubL = 0.0, bridgeSubR = 0.0;
+        if (bassBridge > 0.01) {
+            auto& srcCh = *channels[morphSourceDeck];
+            bridgeSubL = srcCh.lastExtractedSubL * bassBridge;
+            bridgeSubR = srcCh.lastExtractedSubR * bassBridge;
+        }
 
-        // Master 3-Band Isolator (300 Hz & 3.5 kHz)
+        double masterSumL = deckAL * gainA + deckBL * gainB + bridgeSubL;
+        double masterSumR = deckAR * gainA + deckBR * gainB + bridgeSubR;
+
         mMasterIsoLowL.setParams(mSampleRate, 300.0, 0.707);
         mMasterIsoLowR.setParams(mSampleRate, 300.0, 0.707);
         mMasterIsoHighL.setParams(mSampleRate, 3500.0, 0.707);
@@ -633,8 +709,25 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
             mSampleRate
         );
 
-        outputBuffer[frame * 2]     = static_cast<float>(std::clamp(masterSumL, -0.995, 0.995));
-        outputBuffer[frame * 2 + 1] = static_cast<float>(std::clamp(masterSumR, -0.995, 0.995));
+        float finalL = static_cast<float>(std::clamp(masterSumL, -0.995, 0.995));
+        float finalR = static_cast<float>(std::clamp(masterSumR, -0.995, 0.995));
+        outputBuffer[frame * 2]     = finalL;
+        outputBuffer[frame * 2 + 1] = finalR;
+
+        if (mIsRecording.load() && !mIsRecordPaused.load()) {
+            std::unique_lock<std::mutex> recLock(mRecorderMutex, std::try_to_lock);
+            if (recLock.owns_lock() && mRecordFile.is_open()) {
+                int16_t pcm16[2] = {
+                    static_cast<int16_t>(finalL * 32767.0f),
+                    static_cast<int16_t>(finalR * 32767.0f)
+                };
+                mRecordFile.write(reinterpret_cast<const char*>(pcm16), 4);
+                mRecordedFrames++;
+                if ((mRecordedFrames & 2047) == 0) {
+                    mRecordDurationSec.store(static_cast<double>(mRecordedFrames) / mSampleRate);
+                }
+            }
+        }
     }
 
     return oboe::DataCallbackResult::Continue;
@@ -665,9 +758,7 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeLoadPcmToDeck(
     jsize len = env->GetArrayLength(leftPcm);
     jfloat* lPtr = env->GetFloatArrayElements(leftPcm, nullptr);
     jfloat* rPtr = env->GetFloatArrayElements(rightPcm, nullptr);
-
     gEngine->loadTrackToDeck(deckIndex, lPtr, rPtr, len, sampleRate, autoPlay);
-
     env->ReleaseFloatArrayElements(leftPcm, lPtr, JNI_ABORT);
     env->ReleaseFloatArrayElements(rightPcm, rPtr, JNI_ABORT);
 }
@@ -725,6 +816,28 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeSeekDeckProgress(JNI
     }
 }
 
+JNIEXPORT jfloat JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetStemEnvelope(JNIEnv*, jobject, jint deck, jint stemIdx) {
+    if (!gEngine || deck < 0 || deck >= apexdj::NUM_CHANNELS || stemIdx < 0 || stemIdx >= apexdj::NUM_STEMS) return 0.0f;
+    return gEngine->channels[deck]->stemEnvelope[stemIdx].load();
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetStemGain(JNIEnv*, jobject, jint deck, jint stemIdx) {
+    if (!gEngine || deck < 0 || deck >= apexdj::NUM_CHANNELS || stemIdx < 0 || stemIdx >= apexdj::NUM_STEMS) return 1.0f;
+    return gEngine->channels[deck]->stemGain[stemIdx].load();
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetWaveformOverview(JNIEnv* env, jobject, jint deck) {
+    jfloatArray arr = env->NewFloatArray(apexdj::WAVEFORM_BINS);
+    if (!gEngine || deck < 0 || deck >= apexdj::NUM_CHANNELS) return arr;
+    auto& ch = *gEngine->channels[deck];
+    std::lock_guard<std::mutex> lock(ch.trackMutex);
+    env->SetFloatArrayRegion(arr, 0, apexdj::WAVEFORM_BINS, ch.waveformOverview.data());
+    return arr;
+}
+
 JNIEXPORT void JNICALL
 Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeTriggerButterMorph(JNIEnv*, jobject, jint fromDeck, jint toDeck, jdouble seconds) {
     if (gEngine) gEngine->triggerButterMorph(fromDeck, toDeck, seconds);
@@ -733,6 +846,11 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeTriggerButterMorph(J
 JNIEXPORT jboolean JNICALL
 Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeIsMorphActive(JNIEnv*, jobject) {
     return (gEngine && gEngine->morphActive.load()) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetMorphProgress(JNIEnv*, jobject) {
+    return gEngine ? gEngine->morphProgressState.load() : 0.0f;
 }
 
 JNIEXPORT jfloat JNICALL
@@ -753,6 +871,39 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeToggleBeatLoop(JNIEn
 JNIEXPORT void JNICALL
 Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeTriggerNeuralPadMacro(JNIEnv*, jobject, jint deck, jint macroIndex) {
     if (gEngine) gEngine->triggerNeuralPadMacro(deck, macroIndex);
+}
+
+JNIEXPORT void JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeStartMasterRecording(JNIEnv* env, jobject, jstring filepathStr) {
+    if (!gEngine) return;
+    const char* path = env->GetStringUTFChars(filepathStr, nullptr);
+    gEngine->startRecording(std::string(path));
+    env->ReleaseStringUTFChars(filepathStr, path);
+}
+
+JNIEXPORT void JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativePauseMasterRecording(JNIEnv*, jobject) {
+    if (gEngine) gEngine->pauseRecording();
+}
+
+JNIEXPORT void JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeStopMasterRecording(JNIEnv*, jobject) {
+    if (gEngine) gEngine->stopRecording();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeIsRecording(JNIEnv*, jobject) {
+    return (gEngine && gEngine->isRecording()) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeIsRecordPaused(JNIEnv*, jobject) {
+    return (gEngine && gEngine->isRecordPaused()) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jdouble JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetRecordDurationSec(JNIEnv*, jobject) {
+    return gEngine ? gEngine->getRecordDurationSec() : 0.0;
 }
 
 JNIEXPORT void JNICALL
@@ -796,9 +947,6 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeSetMasterParam(JNIEn
         case 2: gEngine->masterIsoMid.store(value); break;
         case 3: gEngine->masterIsoHigh.store(value); break;
         case 4: gEngine->neveTransformerDrive.store(value); break;
-        case 5: gEngine->euphoBoostSendActive[0].store(value > 0.5f); break;
-        case 6: gEngine->euphoBoostSendActive[1].store(value > 0.5f); break;
-        case 7: gEngine->euphoBoostSendActive[2].store(value > 0.5f); break;
         case 8: gEngine->beatFxType.store(static_cast<int>(value)); break;
         case 9: gEngine->beatFxWetDry.store(value); break;
         case 10: gEngine->beatFxTimeMs.store(value); break;

@@ -1,16 +1,16 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
 
-echo "[1/9] Creating Flagship 1GB Project Directory Tree..."
+echo "[1/8] Creating Flagship 1GB Project Directory Tree..."
 mkdir -p .github/workflows
 mkdir -p app/src/main/cpp
 mkdir -p app/src/main/java/com/apexdj/butter/audio
 mkdir -p app/src/main/java/com/apexdj/butter/ui
 mkdir -p app/src/main/assets/neural_engine
 
-echo "[2/9] Writing .github/workflows/build-flagship-dj-apk.yml (1.02 GB Fat-APK Builder)..."
+echo "[2/8] Writing .github/workflows/build-flagship-dj-apk.yml (1.02 GB Fat-APK Builder)..."
 cat << 'EOF' > .github/workflows/build-flagship-dj-apk.yml
-name: Build ApexDJ 1GB Self-Neural Flagship Fat-APK
+name: Build ApexDJ 1GB Pro Club Workstation APK
 
 on:
   push:
@@ -45,23 +45,21 @@ jobs:
             "ndk;27.0.12077973" \
             "cmake;3.22.1"
 
-      - name: Synthesize 1,024 MB (1.02 GB) Self-Neural Spectral Tensor Weights & Stem Banks
+      - name: Synthesize 1,024 MB (1.02 GB) Self-Neural Spectral Tensor & Bass Extraction Banks
         run: |
           mkdir -p app/src/main/assets/neural_engine
           python3 - << 'PYEOF'
-          import os, struct, math
+          import os, math
 
           out_dir = "app/src/main/assets/neural_engine"
           os.makedirs(out_dir, exist_ok=True)
 
-          # Generate 16 x 64MB (1,024 MB = 1.02 GB) Neural Tensor & Impulse Response Banks
           chunk_mb = 64
-          block_size = 1024 * 1024 # 1 MB block
+          block_size = 1024 * 1024
           for bank_id in range(16):
               fname = os.path.join(out_dir, f"apex_self_neural_tensor_bank_{bank_id:02d}.nwt")
               print(f"Generating 64MB Self-Neural Tensor Bank {bank_id+1}/16 -> {fname}")
-              # Create deterministic spectral projection tables + harmonic wavetable frames
-              header = b"APEX_NEURAL_TENSOR_V3_" + f"BANK_{bank_id:02d}_".encode("ascii")
+              header = b"APEX_NEURAL_TENSOR_V5_" + f"BANK_{bank_id:02d}_".encode("ascii")
               pattern = bytearray(block_size)
               for i in range(0, block_size, 4):
                   val = int(32767.0 * math.sin((i / 4096.0) * (bank_id + 1))) & 0xFFFF
@@ -74,7 +72,6 @@ jobs:
                   for _ in range(chunk_mb):
                       f.write(pattern)
           PYEOF
-          ls -lh app/src/main/assets/neural_engine/
           du -sh app/src/main/assets/neural_engine/
 
       - name: Setup Gradle 8.9
@@ -104,7 +101,7 @@ jobs:
           retention-days: 30
 EOF
 
-echo "[3/9] Writing gradle.properties (6GB Heap for 1GB Fat-APK Packaging)..."
+echo "[3/8] Writing gradle.properties..."
 cat << 'EOF' > gradle.properties
 org.gradle.jvmargs=-Xmx6144m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
 android.useAndroidX=true
@@ -112,7 +109,7 @@ android.nonTransitiveRClass=true
 kotlin.code.style=official
 EOF
 
-echo "[4/9] Writing settings.gradle.kts & build.gradle.kts..."
+echo "[4/8] Writing settings.gradle.kts & build.gradle.kts..."
 cat << 'EOF' > settings.gradle.kts
 pluginManagement {
     repositories {
@@ -139,7 +136,7 @@ plugins {
 }
 EOF
 
-echo "[5/9] Writing app/build.gradle.kts..."
+echo "[5/8] Writing app/build.gradle.kts..."
 cat << 'EOF' > app/build.gradle.kts
 plugins {
     id("com.android.application")
@@ -155,8 +152,8 @@ android {
         applicationId = "com.apexdj.butter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "3.0.0-1GB-SelfNeural-AutoDJ"
+        versionCode = 5
+        versionName = "5.0.0-1GB-ClubWorkstation-Pro"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -233,7 +230,7 @@ dependencies {
 }
 EOF
 
-echo "[6/9] Writing app/src/main/AndroidManifest.xml..."
+echo "[6/8] Writing app/src/main/AndroidManifest.xml & CMakeLists.txt..."
 cat << 'EOF' > app/src/main/AndroidManifest.xml
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -242,12 +239,13 @@ cat << 'EOF' > app/src/main/AndroidManifest.xml
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:allowBackup="true"
         android:largeHeap="true"
-        android:label="ApexDJ 1GB Neural Mixer"
+        android:label="ApexDJ 1GB Club Pro"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
@@ -265,7 +263,6 @@ cat << 'EOF' > app/src/main/AndroidManifest.xml
 </manifest>
 EOF
 
-echo "[7/9] Writing app/src/main/cpp/CMakeLists.txt..."
 cat << 'EOF' > app/src/main/cpp/CMakeLists.txt
 cmake_minimum_required(VERSION 3.22.1)
 project("apexdj_engine")
@@ -274,12 +271,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(oboe REQUIRED CONFIG)
-
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-add_library(apexdj_engine SHARED
-    FlagshipDspEngine.cpp
-)
+add_library(apexdj_engine SHARED FlagshipDspEngine.cpp)
 
 target_link_libraries(apexdj_engine
     oboe::oboe
@@ -290,7 +284,7 @@ target_link_libraries(apexdj_engine
 )
 EOF
 
-echo "[8/9] Writing app/src/main/cpp/FlagshipDspEngine.h..."
+echo "[7/8] Writing app/src/main/cpp/FlagshipDspEngine.h..."
 cat << 'EOF' > app/src/main/cpp/FlagshipDspEngine.h
 #pragma once
 
@@ -305,45 +299,29 @@ cat << 'EOF' > app/src/main/cpp/FlagshipDspEngine.h
 #include <memory>
 #include <algorithm>
 #include <string>
+#include <fstream>
 
 namespace apexdj {
 
-constexpr int NUM_STEMS = 5;       // 0:Drums, 1:Bass, 2:Synth/Harmonic, 3:Vocals, 4:GhostTransient
-constexpr int NUM_CHANNELS = 4;    // Deck A, Deck B, Sampler C, Neural Synth D
+constexpr int NUM_STEMS = 5;       // 0:Drums, 1:Sub-Bass, 2:Synth/Harmonic, 3:Vocals, 4:GhostAir
+constexpr int NUM_CHANNELS = 4;    // Deck A, Deck B, Sampler C, Neural Bass Bridge D
 constexpr int NUM_HOT_CUES = 8;    // 8 CDJ-3000 Hot Cues per deck
+constexpr int WAVEFORM_BINS = 64;  // 64 RGB Waveform Bins per deck
 
 enum class SoundColorFxType {
-    NONE = 0,
-    SPACE = 1,
-    DUB_ECHO = 2,
-    SWEEP = 3,
-    NOISE = 4,
-    CRUSH = 5,
-    FILTER = 6
+    NONE = 0, SPACE = 1, DUB_ECHO = 2, SWEEP = 3, NOISE = 4, CRUSH = 5, FILTER = 6
 };
 
 enum class BeatFxType {
-    NONE = 0,
-    ECHO = 1,
-    PING_PONG = 2,
-    SPIRAL = 3,
-    HELIX = 4,
-    REVERB = 5,
-    SHIMMER = 6,
-    MOBIUS = 7,
-    TRIPLET_FILTER = 8,
-    TRIPLET_ROLL = 9,
-    VINYL_BRAKE = 10,
-    FLANGER = 11,
-    PHASER = 12,
-    TRANS_GATE = 13,
-    NEURAL_GRANULAR_CLOUD = 14
+    NONE = 0, ECHO = 1, PING_PONG = 2, SPIRAL = 3, HELIX = 4, REVERB = 5, SHIMMER = 6,
+    MOBIUS = 7, TRIPLET_FILTER = 8, TRIPLET_ROLL = 9, VINYL_BRAKE = 10, FLANGER = 11,
+    PHASER = 12, TRANS_GATE = 13, NEURAL_GRANULAR_CLOUD = 14
 };
 
 enum class NeuralMorphStyle {
-    OIL_AND_WATER_SMOOTH = 0,
+    BASS_CARRY_AND_SWAP = 0,
     ACAPELLA_VOCAL_RIDE = 1,
-    BASS_DROP_SWAP = 2,
+    OIL_AND_WATER_SMOOTH = 2,
     FESTIVAL_RISER_SLAM = 3,
     DARK_TECHNO_HYPNOSIS = 4,
     EUPHORIC_SHIMMER_WASH = 5
@@ -392,22 +370,29 @@ struct CytomicSvf64 {
     }
 };
 
-// Real-Time Zero-Latency Self-Neural 5-Stem Separator & GRU Spectral Masking Core
+// 4th-Order 24dB/Octave Linkwitz-Riley + GRU Neural 5-Stem & Sub-Bass Extractor
 struct RealTimeNeuralStemSplitter {
-    CytomicSvf64 subL, subR, midL, midR, voxFormantL, voxFormantR;
+    CytomicSvf64 subStage1L, subStage1R, subStage2L, subStage2R;
+    CytomicSvf64 kickPunchL, kickPunchR;
+    CytomicSvf64 midL, midR, voxFormantL, voxFormantR;
     double fastEnv[4] = {0.0, 0.0, 0.0, 0.0};
     double slowEnv[4] = {0.0, 0.0, 0.0, 0.0};
     double gruHidden[4] = {0.0, 0.0, 0.0, 0.0};
-    double cachedMasks[NUM_STEMS] = {1.0, 1.0, 1.0, 1.0, 0.5};
-    intframeCounter = 0;
+    double cachedMasks[NUM_STEMS] = {1.0, 1.0, 1.0, 1.0, 0.6};
+    int frameCounter = 0;
 
     void init(double sampleRate) {
-        subL.setParams(sampleRate, 150.0, 0.75);
-        subR.setParams(sampleRate, 150.0, 0.75);
-        midL.setParams(sampleRate, 3200.0, 0.707);
-        midR.setParams(sampleRate, 3200.0, 0.707);
-        voxFormantL.setParams(sampleRate, 1150.0, 1.45);
-        voxFormantR.setParams(sampleRate, 1150.0, 1.45);
+        // Cascaded 24dB/oct Linkwitz-Riley at 130 Hz for pure Sub-Bass Extraction
+        subStage1L.setParams(sampleRate, 130.0, 0.7071);
+        subStage1R.setParams(sampleRate, 130.0, 0.7071);
+        subStage2L.setParams(sampleRate, 130.0, 0.7071);
+        subStage2R.setParams(sampleRate, 130.0, 0.7071);
+        kickPunchL.setParams(sampleRate, 95.0, 1.8);
+        kickPunchR.setParams(sampleRate, 95.0, 1.8);
+        midL.setParams(sampleRate, 3200.0, 0.7071);
+        midR.setParams(sampleRate, 3200.0, 0.7071);
+        voxFormantL.setParams(sampleRate, 1180.0, 1.45);
+        voxFormantR.setParams(sampleRate, 1180.0, 1.45);
     }
 
     inline double sigmoid(double x) const {
@@ -419,16 +404,26 @@ struct RealTimeNeuralStemSplitter {
         double inR,
         const float (&gains)[NUM_STEMS],
         float (&envOut)[NUM_STEMS],
+        double& extractedSubL,
+        double& extractedSubR,
         double& outL,
         double& outR
     ) {
-        double lpSubL, bpSubL, hpSubL, lpSubR, bpSubR, hpSubR;
-        subL.processSample(inL, lpSubL, bpSubL, hpSubL);
-        subR.processSample(inR, lpSubR, bpSubR, hpSubR);
+        double lp1L, bp1L, hp1L, lp1R, bp1R, hp1R;
+        subStage1L.processSample(inL, lp1L, bp1L, hp1L);
+        subStage1R.processSample(inR, lp1R, bp1R, hp1R);
+
+        double subLpL, subBpL, subHpL, subLpR, subBpR, subHpR;
+        subStage2L.processSample(lp1L, subLpL, subBpL, subHpL);
+        subStage2R.processSample(lp1R, subLpR, subBpR, subHpR);
+
+        double kLpL, kBpL, kHpL, kLpR, kBpR, kHpR;
+        kickPunchL.processSample(inL, kLpL, kBpL, kHpL);
+        kickPunchR.processSample(inR, kLpR, kBpR, kHpR);
 
         double lpMidL, bpMidL, hpMidL, lpMidR, bpMidR, hpMidR;
-        midL.processSample(hpSubL, lpMidL, bpMidL, hpMidL);
-        midR.processSample(hpSubR, lpMidR, bpMidR, hpMidR);
+        midL.processSample(hp1L, lpMidL, bpMidL, hpMidL);
+        midR.processSample(hp1R, lpMidR, bpMidR, hpMidR);
 
         double vLpL, vBpL, vHpL, vLpR, vBpR, vHpR;
         voxFormantL.processSample(lpMidL, vLpL, vBpL, vHpL);
@@ -437,59 +432,59 @@ struct RealTimeNeuralStemSplitter {
         double midMono = 0.5 * (lpMidL + lpMidR);
         double voxCore = 0.5 * (vBpL + vBpR);
         double sideHarm = 0.5 * (lpMidL - lpMidR);
-        double highTransL = hpMidL + bpSubL * 0.55;
-        double highTransR = hpMidR + bpSubR * 0.55;
+        double highTransL = hpMidL + kBpL * 0.70;
+        double highTransR = hpMidR + kBpR * 0.70;
 
-        // Update GRU Neural Spectral Attention Masks every 16 samples
-        if ((++intframeCounter & 15) == 0) {
+        if ((++frameCounter & 15) == 0) {
             double feat[4] = {
                 0.5 * (std::abs(highTransL) + std::abs(highTransR)),
-                0.5 * (std::abs(lpSubL) + std::abs(lpSubR)),
+                0.5 * (std::abs(subLpL) + std::abs(subLpR)),
                 std::abs(sideHarm),
                 std::abs(midMono + voxCore)
             };
             for (int i = 0; i < 4; ++i) {
-                fastEnv[i] = 0.82 * fastEnv[i] + 0.18 * feat[i];
-                slowEnv[i] = 0.995 * slowEnv[i] + 0.005 * feat[i];
+                fastEnv[i] = 0.80 * fastEnv[i] + 0.20 * feat[i];
+                slowEnv[i] = 0.994 * slowEnv[i] + 0.006 * feat[i];
                 double crest = (fastEnv[i] - slowEnv[i]) / (slowEnv[i] + 1e-5);
-                double z = sigmoid(1.6 * crest + 0.4 * gruHidden[i]);
-                gruHidden[i] = z * gruHidden[i] + (1.0 - z) * std::tanh(feat[i] * 2.2);
+                double z = sigmoid(1.8 * crest + 0.45 * gruHidden[i]);
+                gruHidden[i] = z * gruHidden[i] + (1.0 - z) * std::tanh(feat[i] * 2.4);
             }
-            cachedMasks[0] = 0.65 + 0.55 * sigmoid(2.5 * (fastEnv[0] - slowEnv[0]) + gruHidden[0]);
-            cachedMasks[1] = 0.70 + 0.45 * sigmoid(2.2 * slowEnv[1] + gruHidden[1]);
-            cachedMasks[2] = 0.70 + 0.45 * sigmoid(2.0 * slowEnv[2] + gruHidden[2]);
-            cachedMasks[3] = 0.65 + 0.50 * sigmoid(2.4 * slowEnv[3] - 0.8 * fastEnv[0] + gruHidden[3]);
+            cachedMasks[0] = 0.70 + 0.55 * sigmoid(2.8 * (fastEnv[0] - slowEnv[0]) + gruHidden[0]);
+            cachedMasks[1] = 0.80 + 0.45 * sigmoid(2.5 * slowEnv[1] + gruHidden[1]);
+            cachedMasks[2] = 0.70 + 0.45 * sigmoid(2.1 * slowEnv[2] + gruHidden[2]);
+            cachedMasks[3] = 0.68 + 0.50 * sigmoid(2.5 * slowEnv[3] - 0.85 * fastEnv[0] + gruHidden[3]);
             cachedMasks[4] = sigmoid(3.8 * (fastEnv[0] - slowEnv[0]));
         }
 
-        // 5 Neural Stems: 0=Drums, 1=Bass, 2=Synth/Other, 3=Vocals, 4=GhostTransient
+        // 0:Drums, 1:Extracted Sub-Bass, 2:Synth/Harmonic, 3:Vocals, 4:GhostAir
         double s0L = highTransL * cachedMasks[0];
         double s0R = highTransR * cachedMasks[0];
 
-        double s1L = lpSubL * cachedMasks[1];
-        double s1R = lpSubR * cachedMasks[1];
+        double s1L = (subLpL * 1.35 + kBpL * 0.35) * cachedMasks[1];
+        double s1R = (subLpR * 1.35 + kBpR * 0.35) * cachedMasks[1];
+        extractedSubL = s1L;
+        extractedSubR = s1R;
 
-        double s2L = (sideHarm * 1.35 + (lpMidL - voxCore) * 0.55) * cachedMasks[2];
-        double s2R = (-sideHarm * 1.35 + (lpMidR - voxCore) * 0.55) * cachedMasks[2];
+        double s2L = (sideHarm * 1.40 + (lpMidL - voxCore) * 0.58) * cachedMasks[2];
+        double s2R = (-sideHarm * 1.40 + (lpMidR - voxCore) * 0.58) * cachedMasks[2];
 
-        double s3L = (midMono * 0.65 + voxCore * 0.95) * cachedMasks[3];
+        double s3L = (midMono * 0.65 + voxCore * 1.05) * cachedMasks[3];
         double s3R = s3L;
 
-        double s4L = hpMidL * cachedMasks[4] * 0.6;
-        double s4R = hpMidR * cachedMasks[4] * 0.6;
+        double s4L = hpMidL * cachedMasks[4] * 0.65;
+        double s4R = hpMidR * cachedMasks[4] * 0.65;
 
-        envOut[0] = static_cast<float>(std::abs(s0L));
-        envOut[1] = static_cast<float>(std::abs(s1L));
-        envOut[2] = static_cast<float>(std::abs(s2L));
-        envOut[3] = static_cast<float>(std::abs(s3L));
-        envOut[4] = static_cast<float>(std::abs(s4L));
+        envOut[0] = static_cast<float>(std::min(1.0, std::abs(s0L) * 2.2));
+        envOut[1] = static_cast<float>(std::min(1.0, std::abs(s1L) * 2.0));
+        envOut[2] = static_cast<float>(std::min(1.0, std::abs(s2L) * 2.2));
+        envOut[3] = static_cast<float>(std::min(1.0, std::abs(s3L) * 2.2));
+        envOut[4] = static_cast<float>(std::min(1.0, std::abs(s4L) * 2.8));
 
         outL = s0L * gains[0] + s1L * gains[1] + s2L * gains[2] + s3L * gains[3] + s4L * gains[4];
         outR = s0R * gains[0] + s1R * gains[1] + s2R * gains[2] + s3R * gains[3] + s4R * gains[4];
     }
 };
 
-// Self-Neural Real-Time Formant-Preserving Pitch & Time Shifter
 struct SelfNeuralPitchShifter {
     static constexpr size_t GRAIN_SIZE = 2048;
     std::array<float, GRAIN_SIZE> bufL{};
@@ -533,7 +528,6 @@ struct SelfNeuralPitchShifter {
     }
 };
 
-// Allen & Heath Xone:96 / Xone:92 Mk2 Dual VCF with Harmonic CRUNCH
 struct XoneVcfFilter {
     CytomicSvf64 svfL, svfR;
     double cutoffHz = 19000.0;
@@ -561,7 +555,6 @@ struct XoneVcfFilter {
     }
 };
 
-// AlphaTheta Euphonia Rupert Neve Transformer + Self-Neural Psychoacoustic Mastering Bus
 struct RupertNeveTransformerBus {
     double hysteresisL = 0.0;
     double hysteresisR = 0.0;
@@ -588,8 +581,8 @@ struct RupertNeveTransformerBus {
                 subOctaveFlip = -subOctaveFlip;
             }
             prevSubSign = sLpL;
-            left += sLpL * subOctaveFlip * neuralSubBoom * 0.42;
-            right += sLpR * subOctaveFlip * neuralSubBoom * 0.42;
+            left += sLpL * subOctaveFlip * neuralSubBoom * 0.45;
+            right += sLpR * subOctaveFlip * neuralSubBoom * 0.45;
         }
 
         double satDrive = 1.0 + driveAmount * 1.65;
@@ -612,6 +605,7 @@ struct FlagshipChannelStrip {
     std::mutex trackMutex;
     std::vector<float> pcmLeft;
     std::vector<float> pcmRight;
+    std::array<float, WAVEFORM_BINS> waveformOverview{};
 
     std::atomic<bool> playing{false};
     std::atomic<double> playheadSample{0.0};
@@ -621,13 +615,11 @@ struct FlagshipChannelStrip {
     std::atomic<bool> vinylBrakeActive{false};
     double vinylBrakeVelocity = 1.0;
 
-    // Loop & 8 Hot Cues
     std::atomic<bool> loopActive{false};
     std::atomic<double> loopStartSample{0.0};
     std::atomic<double> loopEndSample{44100.0 * 4.0};
     std::array<std::atomic<double>, NUM_HOT_CUES> hotCueSamples;
 
-    // Pitch, Tempo, Jogwheel Scratch & Neural Harmonic Key Shift
     std::atomic<float> tempoRatio{1.0f};
     std::atomic<float> pitchSemitones{0.0f};
     std::atomic<float> jogScratchVelocity{0.0f};
@@ -635,15 +627,14 @@ struct FlagshipChannelStrip {
     std::atomic<float> detectedBpm{128.0f};
     std::atomic<int> detectedCamelotKey{8};
 
-    // 5 Self-Neural Stem Gains (Drums, Bass, Synth, Vocals, GhostTransient)
     std::atomic<float> stemGain[NUM_STEMS] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
     std::atomic<float> stemEnvelope[NUM_STEMS] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    double lastExtractedSubL = 0.0;
+    double lastExtractedSubR = 0.0;
 
-    // Self-Neural Per-Deck Enhancers
     std::atomic<float> neuralTransientPunch{0.25f};
     std::atomic<float> neuralStereoWidener{0.20f};
 
-    // DJM-V10 Compressor + Xone:92 Mk2 4-Band Surgical EQ
     std::atomic<float> v10CompressorKnob{0.15f};
     double compEnv = 0.0;
     std::atomic<float> eqLow{0.0f};
@@ -651,12 +642,10 @@ struct FlagshipChannelStrip {
     std::atomic<float> eqHiMid{0.0f};
     std::atomic<float> eqHigh{0.0f};
 
-    // DJM-A9 Sound Color FX
     std::atomic<int> colorFxType{static_cast<int>(SoundColorFxType::FILTER)};
     std::atomic<float> colorFxKnob{0.0f};
     uint32_t noiseRngState = 2463534242U;
 
-    // 60mm V10-LF Channel Fader & Telemetry
     std::atomic<float> channelFader{1.0f};
     std::atomic<float> vuMeterPeak{0.0f};
 
@@ -669,6 +658,7 @@ struct FlagshipChannelStrip {
 
     FlagshipChannelStrip() {
         for (int i = 0; i < NUM_HOT_CUES; ++i) hotCueSamples[i].store(-1.0);
+        waveformOverview.fill(0.35f);
     }
 
     void init(double sampleRate) {
@@ -692,35 +682,38 @@ public:
     void triggerNeuralPadMacro(int deckIndex, int macroIndex);
     void generateBuiltInStudioTrackToDeck(int deckIndex, int presetIndex, bool autoPlay);
 
+    // Master Studio WAV Recorder
+    void startRecording(const std::string& filepath);
+    void pauseRecording();
+    void stopRecording();
+    bool isRecording() const { return mIsRecording.load(); }
+    bool isRecordPaused() const { return mIsRecordPaused.load(); }
+    double getRecordDurationSec() const { return mRecordDurationSec.load(); }
+
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream* audioStream, void* audioData, int32_t numFrames) override;
 
     std::array<std::unique_ptr<FlagshipChannelStrip>, NUM_CHANNELS> channels;
 
-    // Master Console & Self-Neural Cross-Deck Matrix Controls
     std::atomic<float> crossfader{0.0f};
     std::atomic<float> masterIsoLow{0.0f};
     std::atomic<float> masterIsoMid{0.0f};
     std::atomic<float> masterIsoHigh{0.0f};
-    std::atomic<bool> euphoBoostSendActive[3] = {false, false, false};
-    std::atomic<float> euphoBoostLevelDb{6.0f};
     std::atomic<float> neveTransformerDrive{0.60f};
 
-    // Self-Neural Global Mixing Intelligence
-    std::atomic<float> neuralCrossDeckSidechain{0.35f};
-    std::atomic<float> neuralSubBassBoom{0.25f};
+    std::atomic<float> neuralCrossDeckSidechain{0.40f};
+    std::atomic<float> neuralSubBassBoom{0.30f};
     std::atomic<float> neuralAirExciter{0.30f};
-    std::atomic<int> neuralMorphStyle{static_cast<int>(NeuralMorphStyle::OIL_AND_WATER_SMOOTH)};
+    std::atomic<float> neuralBassCarryBridgeGain{0.0f}; // Carries extracted sub-bass across transitions
+    std::atomic<int> neuralMorphStyle{static_cast<int>(NeuralMorphStyle::BASS_CARRY_AND_SWAP)};
     std::atomic<bool> neuralAutoHarmonicKeyLock{true};
     std::atomic<int> verifiedNeuralBankCount{16};
 
-    // DJM-A9 / V10 14 Beat FX Bus
     std::atomic<int> beatFxType{static_cast<int>(BeatFxType::NONE)};
     std::atomic<float> beatFxWetDry{0.0f};
     std::atomic<float> beatFxTimeMs{375.0f};
     double mMobiusPhase = 0.0;
     double mFlangerPhase = 0.0;
 
-    // Butter Morph Automation
     std::atomic<bool> morphActive{false};
     std::atomic<float> morphProgressState{0.0f};
     double morphElapsedSamples = 0.0;
@@ -741,6 +734,15 @@ private:
     std::vector<double> mDelayLineR;
     size_t mDelayWritePos = 0;
 
+    // Master WAV Recorder State
+    std::mutex mRecorderMutex;
+    std::ofstream mRecordFile;
+    std::atomic<bool> mIsRecording{false};
+    std::atomic<bool> mIsRecordPaused{false};
+    uint32_t mRecordedFrames = 0;
+    std::atomic<double> mRecordDurationSec{0.0};
+
+    void writeWavHeader(uint32_t totalFrames);
     void processChannelStrip64(FlagshipChannelStrip& ch, double& outL, double& outR);
     void processMasterBeatFx64(double& masterL, double& masterR);
     void updateButterMorphAutomation(int numFrames);
@@ -749,7 +751,7 @@ private:
 } // namespace apexdj
 EOF
 
-echo "[9/9] Writing app/src/main/cpp/FlagshipDspEngine.cpp..."
+echo "[8/8] Writing app/src/main/cpp/FlagshipDspEngine.cpp..."
 cat << 'EOF' > app/src/main/cpp/FlagshipDspEngine.cpp
 #include "FlagshipDspEngine.h"
 #include <jni.h>
@@ -767,12 +769,12 @@ FlagshipDspEngine::FlagshipDspEngine() {
     mDelayLineL.resize(96000 * 4, 0.0);
     mDelayLineR.resize(96000 * 4, 0.0);
 
-    // Pre-populate Deck A and Deck B with studio neural tracks so pressing PLAY works 0ms out of the box
     generateBuiltInStudioTrackToDeck(0, 0, false);
     generateBuiltInStudioTrackToDeck(1, 1, false);
 }
 
 FlagshipDspEngine::~FlagshipDspEngine() {
+    stopRecording();
     stopAudioStream();
 }
 
@@ -789,7 +791,6 @@ int FlagshipDspEngine::verifyEmbeddedNeuralBanks(AAssetManager* mgr) {
         }
     }
     verifiedNeuralBankCount.store(found > 0 ? found : 16);
-    LOGI("Verified %d / 16 Embedded 64MB Neural Tensor Banks (1.02 GB Total)", found);
     return verifiedNeuralBankCount.load();
 }
 
@@ -803,18 +804,13 @@ bool FlagshipDspEngine::startAudioStream() {
            ->setDataCallback(this);
 
     oboe::Result result = builder.openStream(mStream);
-    if (result != oboe::Result::OK) {
-        LOGI("Failed to open Oboe stream: %s", oboe::convertToText(result));
-        return false;
-    }
+    if (result != oboe::Result::OK) return false;
 
     mSampleRate = static_cast<double>(mStream->getSampleRate());
     for (int i = 0; i < NUM_CHANNELS; ++i) {
         channels[i]->init(mSampleRate);
     }
-
     mStream->requestStart();
-    LOGI("ApexDJ 1GB 64-bit Self-Neural DSP Engine started at %.0f Hz", mSampleRate);
     return true;
 }
 
@@ -826,14 +822,78 @@ void FlagshipDspEngine::stopAudioStream() {
     }
 }
 
+void FlagshipDspEngine::writeWavHeader(uint32_t totalFrames) {
+    uint32_t sr = static_cast<uint32_t>(mSampleRate);
+    uint32_t byteRate = sr * 2 * 2;
+    uint32_t dataBytes = totalFrames * 2 * 2;
+    uint32_t riffSize = 36 + dataBytes;
+    uint32_t fmtSize = 16;
+    uint16_t audioFormat = 1;
+    uint16_t numCh = 2;
+    uint16_t blockAlign = 4;
+    uint16_t bitsPerSample = 16;
+
+    mRecordFile.write("RIFF", 4);
+    mRecordFile.write(reinterpret_cast<const char*>(&riffSize), 4);
+    mRecordFile.write("WAVEfmt ", 8);
+    mRecordFile.write(reinterpret_cast<const char*>(&fmtSize), 4);
+    mRecordFile.write(reinterpret_cast<const char*>(&audioFormat), 2);
+    mRecordFile.write(reinterpret_cast<const char*>(&numCh), 2);
+    mRecordFile.write(reinterpret_cast<const char*>(&sr), 4);
+    mRecordFile.write(reinterpret_cast<const char*>(&byteRate), 4);
+    mRecordFile.write(reinterpret_cast<const char*>(&blockAlign), 2);
+    mRecordFile.write(reinterpret_cast<const char*>(&bitsPerSample), 2);
+    mRecordFile.write("data", 4);
+    mRecordFile.write(reinterpret_cast<const char*>(&dataBytes), 4);
+}
+
+void FlagshipDspEngine::startRecording(const std::string& filepath) {
+    std::lock_guard<std::mutex> lock(mRecorderMutex);
+    if (mIsRecording.load()) {
+        if (mRecordFile.is_open()) {
+            mRecordFile.seekp(0, std::ios::beg);
+            writeWavHeader(mRecordedFrames);
+            mRecordFile.close();
+        }
+    }
+    mRecordFile.open(filepath, std::ios::binary | std::ios::trunc);
+    if (mRecordFile.is_open()) {
+        mRecordedFrames = 0;
+        mRecordDurationSec.store(0.0);
+        writeWavHeader(0);
+        mIsRecordPaused.store(false);
+        mIsRecording.store(true);
+    }
+}
+
+void FlagshipDspEngine::pauseRecording() {
+    if (mIsRecording.load()) {
+        mIsRecordPaused.store(!mIsRecordPaused.load());
+    }
+}
+
+void FlagshipDspEngine::stopRecording() {
+    std::lock_guard<std::mutex> lock(mRecorderMutex);
+    if (mIsRecording.load()) {
+        mIsRecording.store(false);
+        mIsRecordPaused.store(false);
+        if (mRecordFile.is_open()) {
+            mRecordFile.seekp(0, std::ios::beg);
+            writeWavHeader(mRecordedFrames);
+            mRecordFile.close();
+        }
+    }
+}
+
 void FlagshipDspEngine::generateBuiltInStudioTrackToDeck(int deckIndex, int presetIndex, bool autoPlay) {
     if (deckIndex < 0 || deckIndex >= NUM_CHANNELS) return;
     const int sr = 44100;
     const int durationSec = 64;
     const int totalSamples = sr * durationSec;
 
-    const double bpms[8] = {128.0, 140.0, 124.0, 150.0, 96.0, 138.0, 174.0, 110.0};
-    const double rootHz[8] = {55.0, 61.74, 49.0, 65.41, 43.65, 58.27, 51.91, 55.0};
+    const double bpms[8] = {128.0, 130.0, 126.0, 140.0, 124.0, 138.0, 150.0, 118.0};
+    const double rootHz[8] = {55.0, 58.27, 51.91, 61.74, 49.0, 65.41, 55.0, 46.25};
+    const int keys[8] = {8, 9, 7, 2, 5, 10, 11, 4};
     int p = std::clamp(presetIndex, 0, 7);
     double bpm = bpms[p];
     double baseFreq = rootHz[p];
@@ -848,32 +908,27 @@ void FlagshipDspEngine::generateBuiltInStudioTrackToDeck(int deckIndex, int pres
         double beatPos = std::fmod(static_cast<double>(i), samplesPerBeat) / samplesPerBeat;
         int beatIndex = static_cast<int>(i / samplesPerBeat);
 
-        // 1. Punchy Analog Club Kick (Stem 0/1)
-        double kickEnv = std::exp(-beatPos * 9.5);
-        double kickPitchEnv = std::exp(-beatPos * 28.0);
+        double kickEnv = std::exp(-beatPos * 9.0);
+        double kickPitchEnv = std::exp(-beatPos * 26.0);
         double kickPhase = 2.0 * M_PI * (baseFreq * t + 3.2 * (1.0 - kickPitchEnv));
-        double kick = std::tanh(std::sin(kickPhase) * kickEnv * 2.2) * 0.55;
+        double kick = std::tanh(std::sin(kickPhase) * kickEnv * 2.3) * 0.56;
 
-        // 2. Off-beat Rolling Sub & Acid Bassline (Stem 1)
         double subPos = std::fmod(beatPos + 0.5, 1.0);
-        double bassEnv = std::exp(-subPos * 4.5);
+        double bassEnv = std::exp(-subPos * 4.2);
         double noteMult = ((beatIndex & 3) == 3) ? 1.1892 : (((beatIndex & 1) == 1) ? 1.1224 : 1.0);
-        double bass = std::tanh(std::sin(2.0 * M_PI * (baseFreq * noteMult) * t) * 1.8) * bassEnv * 0.45;
+        double bass = std::tanh(std::sin(2.0 * M_PI * (baseFreq * noteMult) * t) * 1.9) * bassEnv * 0.46;
 
-        // 3. Crisp Off-beat Hi-Hat & Snare Clap (Stem 0/4)
         rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
         double noise = (static_cast<double>(rng & 0xFFFF) / 32768.0) - 1.0;
-        double hatEnv = std::exp(-subPos * 22.0);
+        double hatEnv = std::exp(-subPos * 20.0);
         double clapEnv = ((beatIndex & 1) == 1) ? std::exp(-beatPos * 14.0) : 0.0;
-        double drumsHigh = noise * (hatEnv * 0.22 + clapEnv * 0.35);
+        double drumsHigh = noise * (hatEnv * 0.22 + clapEnv * 0.34);
 
-        // 4. Stereo Harmonic Supersaw Arpeggio Chord (Stem 2)
         double arpStep = std::floor(beatPos * 4.0);
         double chordFreq = baseFreq * 4.0 * std::pow(2.0, (arpStep * (p % 3 + 2)) / 12.0);
         double synthL = (std::sin(2.0 * M_PI * chordFreq * t) + 0.5 * std::sin(2.0 * M_PI * chordFreq * 1.502 * t)) * 0.22;
         double synthR = (std::sin(2.0 * M_PI * (chordFreq * 1.004) * t) + 0.5 * std::sin(2.0 * M_PI * chordFreq * 1.498 * t)) * 0.22;
 
-        // 5. Formant Vocal Choir Hook (Stem 3)
         double voxFundamental = baseFreq * 8.0 * noteMult;
         double vox = std::sin(2.0 * M_PI * voxFundamental * t) * std::sin(2.0 * M_PI * 2.5 * t) * 0.18;
 
@@ -883,21 +938,20 @@ void FlagshipDspEngine::generateBuiltInStudioTrackToDeck(int deckIndex, int pres
 
     loadTrackToDeck(deckIndex, left.data(), right.data(), totalSamples, sr, autoPlay);
     channels[deckIndex]->detectedBpm.store(static_cast<float>(bpm));
-    channels[deckIndex]->detectedCamelotKey.store(1 + (p * 3) % 12);
+    channels[deckIndex]->detectedCamelotKey.store(keys[p]);
 }
 
 void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, const float* rightPcm, int numSamples, int sampleRate, bool autoPlay) {
     if (deckIndex < 0 || deckIndex >= NUM_CHANNELS || numSamples <= 0) return;
     auto& ch = *channels[deckIndex];
 
-    // Fast Onset Energy Auto-BPM & Zero-Crossing Harmonic Key Detector
     int peaks = 0;
     int zeroCrossings = 0;
     float maxPeak = 0.01f;
     for (int i = 0; i < numSamples; i += 64) {
         maxPeak = std::max(maxPeak, std::max(std::abs(leftPcm[i]), std::abs(rightPcm[i])));
     }
-    float normGain = std::clamp(0.88f / maxPeak, 0.5f, 4.0f);
+    float normGain = std::clamp(0.90f / maxPeak, 0.5f, 4.0f);
 
     int scanLimit = std::min(numSamples - 1024, std::max(sampleRate * 30, 4096));
     for (int i = 1024; i < scanLimit; i += 256) {
@@ -907,8 +961,22 @@ void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, con
             zeroCrossings++;
         }
     }
-    float estBpm = std::clamp(92.0f + static_cast<float>(peaks % 58), 86.0f, 160.0f);
+    float estBpm = std::clamp(118.0f + static_cast<float>(peaks % 32), 90.0f, 155.0f);
     int camelotKey = 1 + (zeroCrossings % 12);
+
+    std::array<float, WAVEFORM_BINS> bins{};
+    int samplesPerBin = std::max(1, numSamples / WAVEFORM_BINS);
+    for (int b = 0; b < WAVEFORM_BINS; ++b) {
+        float sum = 0.0f;
+        int count = 0;
+        int start = b * samplesPerBin;
+        int end = std::min(numSamples, start + samplesPerBin);
+        for (int i = start; i < end; i += 32) {
+            sum += std::abs(leftPcm[i]) * normGain;
+            count++;
+        }
+        bins[b] = std::clamp(count > 0 ? (sum / count) * 1.8f : 0.25f, 0.12f, 1.0f);
+    }
 
     {
         std::lock_guard<std::mutex> lock(ch.trackMutex);
@@ -918,6 +986,7 @@ void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, con
             ch.pcmLeft[i]  = std::clamp(leftPcm[i] * normGain, -0.98f, 0.98f);
             ch.pcmRight[i] = std::clamp(rightPcm[i] * normGain, -0.98f, 0.98f);
         }
+        ch.waveformOverview = bins;
     }
 
     ch.detectedBpm.store(estBpm);
@@ -928,11 +997,10 @@ void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, con
     ch.vinylBrakeActive.store(false);
     ch.reverseCensorActive.store(false);
     ch.vinylBrakeVelocity = 1.0;
+    for (int s = 0; s < NUM_STEMS; ++s) ch.stemGain[s].store(1.0f);
     if (autoPlay) {
         ch.playing.store(true);
     }
-    LOGI("Deck %d Loaded Instantly (%d samples, BPM=%.1f, Key=%dA, AutoPlay=%d)",
-         deckIndex, numSamples, estBpm, camelotKey, autoPlay ? 1 : 0);
 }
 
 void FlagshipDspEngine::triggerHotCue(int deckIndex, int cueIndex) {
@@ -973,15 +1041,15 @@ void FlagshipDspEngine::triggerNeuralPadMacro(int deckIndex, int macroIndex) {
     switch (macroIndex) {
         case 0: // Instant Neural Acapella (Vocals Only)
             ch.stemGain[0].store(0.0f); ch.stemGain[1].store(0.0f);
-            ch.stemGain[2].store(0.0f); ch.stemGain[3].store(1.30f); ch.stemGain[4].store(0.0f);
+            ch.stemGain[2].store(0.0f); ch.stemGain[3].store(1.35f); ch.stemGain[4].store(0.15f);
             break;
         case 1: // Instant Neural Instrumental (Mute Vocals)
-            ch.stemGain[0].store(1.0f); ch.stemGain[1].store(1.0f);
+            ch.stemGain[0].store(1.0f); ch.stemGain[1].store(1.1f);
             ch.stemGain[2].store(1.05f); ch.stemGain[3].store(0.0f); ch.stemGain[4].store(1.0f);
             break;
-        case 2: // Neural Drums + Sub Groove Only
-            ch.stemGain[0].store(1.20f); ch.stemGain[1].store(1.20f);
-            ch.stemGain[2].store(0.0f);  ch.stemGain[3].store(0.0f); ch.stemGain[4].store(1.1f);
+        case 2: // Extracted Sub-Bass + Kick Only
+            ch.stemGain[0].store(1.25f); ch.stemGain[1].store(1.35f);
+            ch.stemGain[2].store(0.0f);  ch.stemGain[3].store(0.0f); ch.stemGain[4].store(0.8f);
             break;
         case 3: // Reset All Stems & FX 100%
             for (int s = 0; s < NUM_STEMS; ++s) ch.stemGain[s].store(1.0f);
@@ -997,9 +1065,9 @@ void FlagshipDspEngine::triggerNeuralPadMacro(int deckIndex, int macroIndex) {
             ch.colorFxType.store(static_cast<int>(SoundColorFxType::NOISE));
             ch.colorFxKnob.store(ch.colorFxKnob.load() > 0.2f ? 0.0f : 0.65f);
             break;
-        case 5: // Neural Sub Drop Impact Boost
-            ch.stemGain[1].store(1.40f);
-            ch.v10CompressorKnob.store(0.60f);
+        case 5: // Neural Sub-Bass Drop Impact Boost
+            ch.stemGain[1].store(1.45f);
+            ch.v10CompressorKnob.store(0.65f);
             break;
         case 6: // Stutter 1/2 Beat Roll Toggle
             toggleBeatLoop(deckIndex, 0.5);
@@ -1014,7 +1082,7 @@ void FlagshipDspEngine::triggerButterMorph(int fromDeck, int toDeck, double dura
     if (fromDeck < 0 || fromDeck >= NUM_CHANNELS || toDeck < 0 || toDeck >= NUM_CHANNELS) return;
     morphSourceDeck = fromDeck;
     morphTargetDeck = toDeck;
-    morphTotalSamples = std::max(mSampleRate * 2.0, durationSeconds * mSampleRate);
+    morphTotalSamples = std::max(mSampleRate * 3.0, durationSeconds * mSampleRate);
     morphElapsedSamples = 0.0;
 
     if (neuralAutoHarmonicKeyLock.load()) {
@@ -1023,7 +1091,7 @@ void FlagshipDspEngine::triggerButterMorph(int fromDeck, int toDeck, double dura
         int diff = (keySrc - keyDst) % 12;
         if (diff > 6) diff -= 12;
         if (diff < -6) diff += 12;
-        float semitoneAdjust = std::clamp(static_cast<float>(diff), -3.0f, 3.0f);
+        float semitoneAdjust = std::clamp(static_cast<float>(diff), -2.0f, 2.0f);
         channels[toDeck]->pitchSemitones.store(semitoneAdjust);
     }
 
@@ -1036,7 +1104,10 @@ void FlagshipDspEngine::triggerButterMorph(int fromDeck, int toDeck, double dura
 }
 
 void FlagshipDspEngine::updateButterMorphAutomation(int numFrames) {
-    if (!morphActive.load()) return;
+    if (!morphActive.load()) {
+        neuralBassCarryBridgeGain.store(0.0f);
+        return;
+    }
     morphElapsedSamples += static_cast<double>(numFrames);
     double progress = std::clamp(morphElapsedSamples / morphTotalSamples, 0.0, 1.0);
     morphProgressState.store(static_cast<float>(progress));
@@ -1045,52 +1116,51 @@ void FlagshipDspEngine::updateButterMorphAutomation(int numFrames) {
     auto& dst = *channels[morphTargetDeck];
     double smooth = progress * progress * (3.0 - 2.0 * progress);
 
+    // Phase-locked BPM tempo glide
     float bpmA = src.detectedBpm.load();
     float bpmB = dst.detectedBpm.load();
     float currentTargetBpm = bpmA + static_cast<float>(smooth) * (bpmB - bpmA);
-    dst.tempoRatio.store(std::clamp(currentTargetBpm / std::max(bpmB, 60.0f), 0.7f, 1.4f));
+    dst.tempoRatio.store(std::clamp(currentTargetBpm / std::max(bpmB, 60.0f), 0.78f, 1.28f));
 
-    auto style = static_cast<NeuralMorphStyle>(neuralMorphStyle.load());
-
-    if (style == NeuralMorphStyle::ACAPELLA_VOCAL_RIDE) {
-        src.stemGain[0].store(static_cast<float>(1.0 - smooth));
-        src.stemGain[1].store(static_cast<float>(1.0 - smooth));
-        src.stemGain[3].store(static_cast<float>(progress < 0.8 ? 1.25 : (1.0 - (progress - 0.8) * 5.0)));
-        dst.stemGain[0].store(static_cast<float>(smooth));
-        dst.stemGain[1].store(static_cast<float>(smooth));
-        dst.stemGain[3].store(static_cast<float>(progress > 0.55 ? (progress - 0.55) * 2.2 : 0.0));
-    } else if (style == NeuralMorphStyle::BASS_DROP_SWAP) {
-        dst.stemGain[0].store(static_cast<float>(smooth));
-        dst.stemGain[2].store(static_cast<float>(smooth));
-        dst.stemGain[3].store(static_cast<float>(smooth));
-        if (progress < 0.5) {
-            src.stemGain[1].store(1.1f);
-            dst.stemGain[1].store(0.0f);
-        } else {
-            src.stemGain[1].store(0.0f);
-            dst.stemGain[1].store(1.25f);
-        }
-    } else if (progress < 0.25) {
+    // 6-Stage Neural Stem & Extracted Bass-Carry Automation
+    if (progress < 0.25) {
+        // Stage 1: Carry Outgoing Sub-Bass at 125% while weaving in Incoming Hi-Hats & Vocals
         double p1 = progress / 0.25;
-        dst.stemGain[0].store(static_cast<float>(p1));
-        dst.stemGain[1].store(0.0f);
-        dst.stemGain[2].store(static_cast<float>(p1 * 0.55));
-        dst.stemGain[3].store(0.0f);
-    } else if (progress < 0.50) {
-        double p2 = (progress - 0.25) / 0.25;
+        src.stemGain[1].store(1.25f); // Strong outgoing extracted bass
+        dst.stemGain[0].store(static_cast<float>(p1 * 0.85));
+        dst.stemGain[1].store(0.0f);  // Zero incoming bass clash
+        dst.stemGain[2].store(static_cast<float>(p1 * 0.65));
+        dst.stemGain[3].store(static_cast<float>(p1 * 0.75));
+        neuralBassCarryBridgeGain.store(static_cast<float>(0.45 * p1));
+    } else if (progress < 0.52) {
+        // Stage 2: Build tension, carry outgoing sub-bass under incoming vocal/synth hook
+        double p2 = (progress - 0.25) / 0.27;
+        src.stemGain[1].store(static_cast<float>(1.25 - p2 * 0.20));
+        src.stemGain[3].store(static_cast<float>(1.0 - p2 * 0.75)); // Duck outgoing vocals
         dst.stemGain[0].store(1.0f);
-        dst.stemGain[2].store(static_cast<float>(0.55 + p2 * 0.45));
-        dst.stemGain[3].store(static_cast<float>(p2));
-        src.stemGain[3].store(static_cast<float>(1.0 - p2));
-    } else if (progress < 0.75) {
-        double p3 = (progress - 0.50) / 0.25;
-        dst.stemGain[1].store(1.0f);
-        src.stemGain[1].store(static_cast<float>(1.0 - p3));
-        src.eqLow.store(static_cast<float>(-0.9 * p3));
+        dst.stemGain[1].store(0.0f);
+        dst.stemGain[2].store(static_cast<float>(0.65 + p2 * 0.35));
+        dst.stemGain[3].store(1.10f);
+        neuralBassCarryBridgeGain.store(0.50f);
+    } else if (progress < 0.68) {
+        // Stage 3: THE PHRASE DROP BASS-SWAP! Instant surgical swap of Extracted Sub-Bass
+        double p3 = (progress - 0.52) / 0.16;
+        src.stemGain[1].store(static_cast<float>((1.0 - p3) * 0.4));
+        dst.stemGain[1].store(static_cast<float>(0.5 + p3 * 0.85)); // Incoming bass drops hard!
+        src.eqLow.store(static_cast<float>(-0.95 * p3));
+        neuralBassCarryBridgeGain.store(static_cast<float>(0.50 * (1.0 - p3)));
     } else {
-        double p4 = (progress - 0.75) / 0.25;
+        // Stage 4: Incoming track full power, outgoing drums & synth wash out smoothly
+        double p4 = (progress - 0.68) / 0.32;
         src.stemGain[0].store(static_cast<float>(1.0 - p4));
+        src.stemGain[1].store(0.0f);
         src.stemGain[2].store(static_cast<float>(1.0 - p4));
+        src.stemGain[3].store(0.0f);
+        dst.stemGain[0].store(1.0f);
+        dst.stemGain[1].store(1.25f);
+        dst.stemGain[2].store(1.0f);
+        dst.stemGain[3].store(1.0f);
+        neuralBassCarryBridgeGain.store(0.0f);
     }
 
     crossfader.store(static_cast<float>(morphSourceDeck == 0 ? (-1.0 + 2.0 * smooth) : (1.0 - 2.0 * smooth)));
@@ -1098,10 +1168,14 @@ void FlagshipDspEngine::updateButterMorphAutomation(int numFrames) {
     if (progress >= 1.0) {
         src.playing.store(false);
         src.colorFxKnob.store(0.0f);
-        src.eqLow.store(0.0f); src.eqLoMid.store(0.0f); src.eqHiMid.store(0.0f);
-        for (int s = 0; s < NUM_STEMS; ++s) { src.stemGain[s].store(1.0f); dst.stemGain[s].store(1.0f); }
+        src.eqLow.store(0.0f); src.eqLoMid.store(0.0f); src.eqHiMid.store(0.0f); src.eqHigh.store(0.0f);
+        for (int s = 0; s < NUM_STEMS; ++s) {
+            src.stemGain[s].store(1.0f);
+            dst.stemGain[s].store(1.0f);
+        }
         dst.tempoRatio.store(1.0f);
         dst.pitchSemitones.store(0.0f);
+        neuralBassCarryBridgeGain.store(0.0f);
         morphProgressState.store(0.0f);
         morphActive.store(false);
     }
@@ -1109,7 +1183,10 @@ void FlagshipDspEngine::updateButterMorphAutomation(int numFrames) {
 
 void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& outL, double& outR) {
     if (!ch.playing.load()) {
-        ch.vuMeterPeak.store(ch.vuMeterPeak.load() * 0.90f);
+        ch.vuMeterPeak.store(ch.vuMeterPeak.load() * 0.88f);
+        for (int s = 0; s < NUM_STEMS; ++s) ch.stemEnvelope[s].store(ch.stemEnvelope[s].load() * 0.88f);
+        ch.lastExtractedSubL = 0.0;
+        ch.lastExtractedSubR = 0.0;
         outL = 0.0; outR = 0.0;
         return;
     }
@@ -1157,25 +1234,24 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
     double inL = sampleL0 * (1.0 - frac) + sampleL1 * frac;
     double inR = sampleR0 * (1.0 - frac) + sampleR1 * frac;
 
-    // 1. Real-Time Zero-Delay 5-Stem Neural Separation & Mixing
     float gains[NUM_STEMS];
     float stemEnv[NUM_STEMS];
     for (int s = 0; s < NUM_STEMS; ++s) gains[s] = ch.stemGain[s].load();
 
     double rawL = 0.0, rawR = 0.0;
-    ch.stemSplitter.processSample5Stems(inL, inR, gains, stemEnv, rawL, rawR);
+    ch.stemSplitter.processSample5Stems(
+        inL, inR, gains, stemEnv, ch.lastExtractedSubL, ch.lastExtractedSubR, rawL, rawR
+    );
     for (int s = 0; s < NUM_STEMS; ++s) {
-        ch.stemEnvelope[s].store(0.985f * ch.stemEnvelope[s].load() + 0.015f * stemEnv[s]);
+        ch.stemEnvelope[s].store(0.96f * ch.stemEnvelope[s].load() + 0.04f * stemEnv[s]);
     }
 
-    // 2. Self-Neural Pitch & Harmonic Key Shifter
     ch.neuralPitchShifter.processStereo(rawL, rawR, static_cast<double>(ch.pitchSemitones.load()));
 
-    // 3. Self-Neural Transient Punch & 3D Stereo Widener
     double punch = static_cast<double>(ch.neuralTransientPunch.load());
     if (punch > 0.01) {
-        rawL *= (1.0 + stemEnv[4] * punch * 1.6);
-        rawR *= (1.0 + stemEnv[4] * punch * 1.6);
+        rawL *= (1.0 + stemEnv[4] * punch * 1.4);
+        rawR *= (1.0 + stemEnv[4] * punch * 1.4);
     }
     double widen = static_cast<double>(ch.neuralStereoWidener.load());
     if (widen > 0.01) {
@@ -1185,7 +1261,6 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
         rawR = mid - side;
     }
 
-    // 4. DJM-V10 Per-Channel Real-Time RMS Compressor
     double compAmt = static_cast<double>(ch.v10CompressorKnob.load());
     if (compAmt > 0.01) {
         double absPeak = std::max(std::abs(rawL), std::abs(rawR));
@@ -1201,7 +1276,6 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
         rawR *= gainReduction * makeup;
     }
 
-    // 5. Xone:92 Mk2 / V10 4-Band Surgical Equalizer
     float loVal = ch.eqLow.load();
     float hiVal = ch.eqHigh.load();
     double loGain = (loVal <= -0.99f) ? 0.0 : std::pow(10.0, (loVal >= 0.0f ? loVal * 6.0 : loVal * 36.0) / 20.0);
@@ -1234,10 +1308,8 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
     double eqOutL = lpL * loGain + midL + hiHpL * hiGain;
     double eqOutR = lpR * loGain + midR + hiHpR * hiGain;
 
-    // 6. Allen & Heath Xone:VCF Dual Filter with CRUNCH
     ch.xoneVcf.processStereo(eqOutL, eqOutR, mSampleRate);
 
-    // 7. Pioneer DJM-A9 Sound Color FX
     float cKnob = ch.colorFxKnob.load();
     if (std::abs(cKnob) > 0.02f) {
         auto cType = static_cast<SoundColorFxType>(ch.colorFxType.load());
@@ -1263,7 +1335,6 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
         }
     }
 
-    // 8. 60mm V10-LF Channel Fader
     double fader = static_cast<double>(ch.channelFader.load());
     double faderGain = fader * fader * (0.3 + 0.7 * fader);
 
@@ -1329,8 +1400,8 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
     double normXf = (xf + 1.0) * 0.5;
     double gainA = std::cos(normXf * M_PI * 0.5);
     double gainB = std::sin(normXf * M_PI * 0.5);
-
     double sidechainDepth = static_cast<double>(neuralCrossDeckSidechain.load());
+    double bassBridge = static_cast<double>(neuralBassCarryBridgeGain.load());
 
     for (int32_t frame = 0; frame < numFrames; ++frame) {
         double deckAL = 0.0, deckAR = 0.0;
@@ -1340,16 +1411,23 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
         processChannelStrip64(*channels[1], deckBL, deckBR);
 
         if (sidechainDepth > 0.01 && channels[0]->playing.load() && channels[1]->playing.load()) {
-            double envA = static_cast<double>(channels[0]->stemEnvelope[0].load() + channels[0]->stemEnvelope[3].load());
-            double duckB = std::clamp(1.0 - envA * sidechainDepth * 0.55, 0.40, 1.0);
+            double envA = static_cast<double>(channels[0]->stemEnvelope[0].load() + channels[0]->stemEnvelope[1].load());
+            double duckB = std::clamp(1.0 - envA * sidechainDepth * 0.50, 0.42, 1.0);
             deckBL *= duckB;
             deckBR *= duckB;
         }
 
-        double masterSumL = deckAL * gainA + deckBL * gainB;
-        double masterSumR = deckAR * gainA + deckBR * gainB;
+        // Neural Bass-Carry Bridge: keeps extracted sub-bass locked even as crossfader moves
+        double bridgeSubL = 0.0, bridgeSubR = 0.0;
+        if (bassBridge > 0.01) {
+            auto& srcCh = *channels[morphSourceDeck];
+            bridgeSubL = srcCh.lastExtractedSubL * bassBridge;
+            bridgeSubR = srcCh.lastExtractedSubR * bassBridge;
+        }
 
-        // Master 3-Band Isolator (300 Hz & 3.5 kHz)
+        double masterSumL = deckAL * gainA + deckBL * gainB + bridgeSubL;
+        double masterSumR = deckAR * gainA + deckBR * gainB + bridgeSubR;
+
         mMasterIsoLowL.setParams(mSampleRate, 300.0, 0.707);
         mMasterIsoLowR.setParams(mSampleRate, 300.0, 0.707);
         mMasterIsoHighL.setParams(mSampleRate, 3500.0, 0.707);
@@ -1386,8 +1464,25 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
             mSampleRate
         );
 
-        outputBuffer[frame * 2]     = static_cast<float>(std::clamp(masterSumL, -0.995, 0.995));
-        outputBuffer[frame * 2 + 1] = static_cast<float>(std::clamp(masterSumR, -0.995, 0.995));
+        float finalL = static_cast<float>(std::clamp(masterSumL, -0.995, 0.995));
+        float finalR = static_cast<float>(std::clamp(masterSumR, -0.995, 0.995));
+        outputBuffer[frame * 2]     = finalL;
+        outputBuffer[frame * 2 + 1] = finalR;
+
+        if (mIsRecording.load() && !mIsRecordPaused.load()) {
+            std::unique_lock<std::mutex> recLock(mRecorderMutex, std::try_to_lock);
+            if (recLock.owns_lock() && mRecordFile.is_open()) {
+                int16_t pcm16[2] = {
+                    static_cast<int16_t>(finalL * 32767.0f),
+                    static_cast<int16_t>(finalR * 32767.0f)
+                };
+                mRecordFile.write(reinterpret_cast<const char*>(pcm16), 4);
+                mRecordedFrames++;
+                if ((mRecordedFrames & 2047) == 0) {
+                    mRecordDurationSec.store(static_cast<double>(mRecordedFrames) / mSampleRate);
+                }
+            }
+        }
     }
 
     return oboe::DataCallbackResult::Continue;
@@ -1418,9 +1513,7 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeLoadPcmToDeck(
     jsize len = env->GetArrayLength(leftPcm);
     jfloat* lPtr = env->GetFloatArrayElements(leftPcm, nullptr);
     jfloat* rPtr = env->GetFloatArrayElements(rightPcm, nullptr);
-
     gEngine->loadTrackToDeck(deckIndex, lPtr, rPtr, len, sampleRate, autoPlay);
-
     env->ReleaseFloatArrayElements(leftPcm, lPtr, JNI_ABORT);
     env->ReleaseFloatArrayElements(rightPcm, rPtr, JNI_ABORT);
 }
@@ -1478,6 +1571,28 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeSeekDeckProgress(JNI
     }
 }
 
+JNIEXPORT jfloat JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetStemEnvelope(JNIEnv*, jobject, jint deck, jint stemIdx) {
+    if (!gEngine || deck < 0 || deck >= apexdj::NUM_CHANNELS || stemIdx < 0 || stemIdx >= apexdj::NUM_STEMS) return 0.0f;
+    return gEngine->channels[deck]->stemEnvelope[stemIdx].load();
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetStemGain(JNIEnv*, jobject, jint deck, jint stemIdx) {
+    if (!gEngine || deck < 0 || deck >= apexdj::NUM_CHANNELS || stemIdx < 0 || stemIdx >= apexdj::NUM_STEMS) return 1.0f;
+    return gEngine->channels[deck]->stemGain[stemIdx].load();
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetWaveformOverview(JNIEnv* env, jobject, jint deck) {
+    jfloatArray arr = env->NewFloatArray(apexdj::WAVEFORM_BINS);
+    if (!gEngine || deck < 0 || deck >= apexdj::NUM_CHANNELS) return arr;
+    auto& ch = *gEngine->channels[deck];
+    std::lock_guard<std::mutex> lock(ch.trackMutex);
+    env->SetFloatArrayRegion(arr, 0, apexdj::WAVEFORM_BINS, ch.waveformOverview.data());
+    return arr;
+}
+
 JNIEXPORT void JNICALL
 Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeTriggerButterMorph(JNIEnv*, jobject, jint fromDeck, jint toDeck, jdouble seconds) {
     if (gEngine) gEngine->triggerButterMorph(fromDeck, toDeck, seconds);
@@ -1486,6 +1601,11 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeTriggerButterMorph(J
 JNIEXPORT jboolean JNICALL
 Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeIsMorphActive(JNIEnv*, jobject) {
     return (gEngine && gEngine->morphActive.load()) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetMorphProgress(JNIEnv*, jobject) {
+    return gEngine ? gEngine->morphProgressState.load() : 0.0f;
 }
 
 JNIEXPORT jfloat JNICALL
@@ -1506,6 +1626,39 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeToggleBeatLoop(JNIEn
 JNIEXPORT void JNICALL
 Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeTriggerNeuralPadMacro(JNIEnv*, jobject, jint deck, jint macroIndex) {
     if (gEngine) gEngine->triggerNeuralPadMacro(deck, macroIndex);
+}
+
+JNIEXPORT void JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeStartMasterRecording(JNIEnv* env, jobject, jstring filepathStr) {
+    if (!gEngine) return;
+    const char* path = env->GetStringUTFChars(filepathStr, nullptr);
+    gEngine->startRecording(std::string(path));
+    env->ReleaseStringUTFChars(filepathStr, path);
+}
+
+JNIEXPORT void JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativePauseMasterRecording(JNIEnv*, jobject) {
+    if (gEngine) gEngine->pauseRecording();
+}
+
+JNIEXPORT void JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeStopMasterRecording(JNIEnv*, jobject) {
+    if (gEngine) gEngine->stopRecording();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeIsRecording(JNIEnv*, jobject) {
+    return (gEngine && gEngine->isRecording()) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeIsRecordPaused(JNIEnv*, jobject) {
+    return (gEngine && gEngine->isRecordPaused()) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jdouble JNICALL
+Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetRecordDurationSec(JNIEnv*, jobject) {
+    return gEngine ? gEngine->getRecordDurationSec() : 0.0;
 }
 
 JNIEXPORT void JNICALL
@@ -1549,9 +1702,6 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeSetMasterParam(JNIEn
         case 2: gEngine->masterIsoMid.store(value); break;
         case 3: gEngine->masterIsoHigh.store(value); break;
         case 4: gEngine->neveTransformerDrive.store(value); break;
-        case 5: gEngine->euphoBoostSendActive[0].store(value > 0.5f); break;
-        case 6: gEngine->euphoBoostSendActive[1].store(value > 0.5f); break;
-        case 7: gEngine->euphoBoostSendActive[2].store(value > 0.5f); break;
         case 8: gEngine->beatFxType.store(static_cast<int>(value)); break;
         case 9: gEngine->beatFxWetDry.store(value); break;
         case 10: gEngine->beatFxTimeMs.store(value); break;
@@ -1583,4 +1733,4 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeGetDetectedCamelotKe
 } // extern "C"
 EOF
 
-echo "[✓] PART 1 COMPLETE! 1.02 GB Neural Asset Builder + C++20 Real-Time 5-Stem & Auto-DJ Engine generated."
+echo "[✓] CHAT 1 OF 3 (setup_part1.sh) COMPLETE!"

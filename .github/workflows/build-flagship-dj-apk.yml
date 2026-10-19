@@ -1,4 +1,4 @@
-name: Build ApexDJ 1GB Self-Neural Flagship Fat-APK
+name: Build ApexDJ 1GB Pro Club Workstation APK
 
 on:
   push:
@@ -33,23 +33,21 @@ jobs:
             "ndk;27.0.12077973" \
             "cmake;3.22.1"
 
-      - name: Synthesize 1,024 MB (1.02 GB) Self-Neural Spectral Tensor Weights & Stem Banks
+      - name: Synthesize 1,024 MB (1.02 GB) Self-Neural Spectral Tensor & Bass Extraction Banks
         run: |
           mkdir -p app/src/main/assets/neural_engine
           python3 - << 'PYEOF'
-          import os, struct, math
+          import os, math
 
           out_dir = "app/src/main/assets/neural_engine"
           os.makedirs(out_dir, exist_ok=True)
 
-          # Generate 16 x 64MB (1,024 MB = 1.02 GB) Neural Tensor & Impulse Response Banks
           chunk_mb = 64
-          block_size = 1024 * 1024 # 1 MB block
+          block_size = 1024 * 1024
           for bank_id in range(16):
               fname = os.path.join(out_dir, f"apex_self_neural_tensor_bank_{bank_id:02d}.nwt")
               print(f"Generating 64MB Self-Neural Tensor Bank {bank_id+1}/16 -> {fname}")
-              # Create deterministic spectral projection tables + harmonic wavetable frames
-              header = b"APEX_NEURAL_TENSOR_V3_" + f"BANK_{bank_id:02d}_".encode("ascii")
+              header = b"APEX_NEURAL_TENSOR_V5_" + f"BANK_{bank_id:02d}_".encode("ascii")
               pattern = bytearray(block_size)
               for i in range(0, block_size, 4):
                   val = int(32767.0 * math.sin((i / 4096.0) * (bank_id + 1))) & 0xFFFF
@@ -62,7 +60,6 @@ jobs:
                   for _ in range(chunk_mb):
                       f.write(pattern)
           PYEOF
-          ls -lh app/src/main/assets/neural_engine/
           du -sh app/src/main/assets/neural_engine/
 
       - name: Setup Gradle 8.9

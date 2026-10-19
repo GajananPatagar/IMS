@@ -12,8 +12,8 @@ android {
         applicationId = "com.apexdj.butter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "3.0.0-1GB-SelfNeural-AutoDJ"
+        versionCode = 5
+        versionName = "5.0.0-1GB-ClubWorkstation-Pro"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
