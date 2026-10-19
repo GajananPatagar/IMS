@@ -2,13 +2,13 @@
 set -e
 
 echo "================================================================="
-echo " APEX-DJ // 1.28 GB INVISIBLE GHOST-MIX CLOUD BUILD & AUTO-DOWNLOAD"
+echo " APEX-DJ // 1.28 GB AUTONOMOUS NEURAL DIRECTOR CLOUD BUILDER"
 echo "================================================================="
 
 pkg install -y git gh
 
 git add -A
-git commit -m "1.28GB Invisible Ghost-Mix Edition with PLL Phase-Lock, Parallel Waveforms & RAM Pre-Buffer" || true
+git commit -m "1.28GB Autonomous Neural Director, 64-Bit Hermite Resampler, Custom App Icon & Silent Launch" || true
 git push -u origin HEAD
 
 echo "[+] Code pushed to GitHub successfully. Waiting 10 seconds for workflow..."
@@ -27,4 +27,4 @@ gh run download "$RUN_ID" -n "ApexDJ-Flagship-1Crore-Edition-APK" -D ~/ApexDJ_Bu
 mkdir -p ~/storage/downloads/ApexDJ_Build
 cp -f ~/ApexDJ_Build/*.apk ~/storage/downloads/ApexDJ_Build/
 ls -lh ~/storage/downloads/ApexDJ_Build/
-echo "[✓] SUCCESS! 1.28 GB Ultra-Luxury Ghost-Mix APK saved to Downloads/ApexDJ_Build/app-release.apk"
+echo "[✓] SUCCESS! 1.28 GB Autonomous Neural Pro APK saved to Downloads/ApexDJ_Build/app-release.apk"

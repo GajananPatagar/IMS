@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -41,11 +40,11 @@ import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.sin
 
-// Ultra-Luxury Rekordbox 7 / CDJ-3000X Hardware Palette
+// AlphaTheta Opus-Quad & Rekordbox 7 Luxury Club Palette
 private val BgObsidian = Color(0xFF04060A)
-private val PanelGunmetal = Color(0xFF0B1019)
-private val PanelElevated = Color(0xFF111723)
-private val BorderSteel = Color(0xFF1E293B)
+private val PanelGunmetal = Color(0xFF0A0F18)
+private val PanelElevated = Color(0xFF111826)
+private val BorderSteel = Color(0xFF1F2A3C)
 private val CyanDeckA = Color(0xFF00F0FF)
 private val OrangeDeckB = Color(0xFFFF6D00)
 private val CrimsonBass = Color(0xFFFF1744)
@@ -59,17 +58,17 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var searchQuery by remember { mutableStateOf("") }
     var onlineTracks by remember { mutableStateOf<List<SongTrack>>(emptyList()) }
     var offlineTracks by remember { mutableStateOf<List<SongTrack>>(emptyList()) }
-    var activeCrateTab by remember { mutableIntStateOf(0) } // 0: Online, 1: Offline, 2: Auto-Remix Queue
+    var activeCrateTab by remember { mutableIntStateOf(1) } // Default to Offline Library on launch
     var crateExpanded by remember { mutableStateOf(true) }
 
     var statusBanner by remember {
-        mutableStateOf("1.28 GB INVISIBLE GHOST-MIX ENGAGED • SUB-MILLISECOND BEAT-GRID LOCK ACTIVE")
+        mutableStateOf("READY • LOAD ANY SONG FROM OFFLINE LIBRARY, LOCAL STORAGE, OR ONLINE SEARCH")
     }
 
-    var deckATitle by remember { mutableStateOf("Peak-Time Tech House Roller") }
-    var deckBTitle by remember { mutableStateOf("Acid Techno Underground Sub") }
-    var deckATrackId by remember { mutableStateOf("studio_0") }
-    var deckBTrackId by remember { mutableStateOf("studio_1") }
+    var deckATitle by remember { mutableStateOf("Empty Deck A — Tap Load or Local A") }
+    var deckBTitle by remember { mutableStateOf("Empty Deck B — Tap Load or Local B") }
+    var deckATrackId by remember { mutableStateOf("") }
+    var deckBTrackId by remember { mutableStateOf("") }
 
     // Continuous Auto-DJ Queue State
     var autoDjEnabled by remember { mutableStateOf(true) }
@@ -77,6 +76,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var masterActiveDeck by remember { mutableIntStateOf(0) }
     var morphInProgress by remember { mutableStateOf(false) }
     var morphProgress by remember { mutableFloatStateOf(0f) }
+    var morphStage by remember { mutableIntStateOf(0) }
 
     // Master WAV Recorder State
     var isRecording by remember { mutableStateOf(false) }
@@ -86,78 +86,73 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
     // Master Console Parameters
     var crossfader by remember { mutableFloatStateOf(0f) }
-    var neveDrive by remember { mutableFloatStateOf(0.60f) }
+    var neveDrive by remember { mutableFloatStateOf(0.35f) }
     var isoLow by remember { mutableFloatStateOf(0f) }
     var isoMid by remember { mutableFloatStateOf(0f) }
     var isoHigh by remember { mutableFloatStateOf(0f) }
-    var neuralSidechain by remember { mutableFloatStateOf(0.45f) }
-    var neuralSubBoom by remember { mutableFloatStateOf(0.30f) }
-    var neuralAirGlow by remember { mutableFloatStateOf(0.30f) }
-    var beatFxWet by remember { mutableFloatStateOf(0f) }
-    var selectedMorphStyle by remember { mutableIntStateOf(0) }
+    var neuralSidechain by remember { mutableFloatStateOf(0.35f) }
+    var neuralAirGlow by remember { mutableFloatStateOf(0.20f) }
 
-    // Real-Time Telemetry
+    // Real-Time Deck Telemetry
     var vuDeckA by remember { mutableFloatStateOf(0f) }
     var vuDeckB by remember { mutableFloatStateOf(0f) }
-    var bpmDeckA by remember { mutableFloatStateOf(128f) }
-    var bpmDeckB by remember { mutableFloatStateOf(128f) }
+    var bpmDeckA by remember { mutableFloatStateOf(126f) }
+    var bpmDeckB by remember { mutableFloatStateOf(126f) }
     var keyDeckA by remember { mutableIntStateOf(8) }
     var keyDeckB by remember { mutableIntStateOf(8) }
     var beatPhaseA by remember { mutableFloatStateOf(0f) }
     var beatPhaseB by remember { mutableFloatStateOf(0f) }
     var playingDeckA by remember { mutableStateOf(false) }
     var playingDeckB by remember { mutableStateOf(false) }
+    var loadedDeckA by remember { mutableStateOf(false) }
+    var loadedDeckB by remember { mutableStateOf(false) }
 
+    // Local File Picker Routing (0 = Deck A, 1 = Deck B, 2 = Auto-DJ Queue)
     var localTargetMode by remember { mutableIntStateOf(0) }
     val localPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
-            val pickedTrack = SongTrack(
-                id = "local_${System.currentTimeMillis()}",
-                title = "Local Audio Mix #${(100..999).random()}",
-                artist = "Device Storage",
-                durationSec = 210,
-                streamUrl = "",
-                isLocal = true,
-                estimatedBpm = 128f,
-                camelotKey = 8,
-                localUri = uri
-            )
-            offlineTracks = listOf(pickedTrack) + offlineTracks
+            val pickedTrack = repo.resolveLocalUriTrack(uri)
+            offlineTracks = listOf(pickedTrack) + offlineTracks.filter { it.id != pickedTrack.id }
             scope.launch {
                 when (localTargetMode) {
                     0 -> {
-                        deckATitle = pickedTrack.title
-                        deckATrackId = pickedTrack.id
-                        repo.loadTrackIntoDeck(0, pickedTrack, autoPlay = true)
-                        masterActiveDeck = 0
-                        statusBanner = "DECK A Loaded Local Track • Invisible Ghost-Mix Ready!"
+                        statusBanner = "Decoding '${pickedTrack.title}' into DECK A (Hermite 64-Bit)..."
+                        val ok = repo.loadTrackIntoDeck(0, pickedTrack, autoPlay = true)
+                        if (ok) {
+                            deckATitle = pickedTrack.title
+                            deckATrackId = pickedTrack.id
+                            masterActiveDeck = 0
+                            statusBanner = "DECK A Playing '${pickedTrack.title}' • Autocorrelation BPM & Stems Locked!"
+                        }
                     }
                     1 -> {
-                        deckBTitle = pickedTrack.title
-                        deckBTrackId = pickedTrack.id
-                        repo.loadTrackIntoDeck(1, pickedTrack, autoPlay = true)
-                        masterActiveDeck = 1
-                        statusBanner = "DECK B Loaded Local Track • Invisible Ghost-Mix Ready!"
+                        statusBanner = "Decoding '${pickedTrack.title}' into DECK B (Hermite 64-Bit)..."
+                        val ok = repo.loadTrackIntoDeck(1, pickedTrack, autoPlay = true)
+                        if (ok) {
+                            deckBTitle = pickedTrack.title
+                            deckBTrackId = pickedTrack.id
+                            masterActiveDeck = 1
+                            statusBanner = "DECK B Playing '${pickedTrack.title}' • Autocorrelation BPM & Stems Locked!"
+                        }
                     }
                     else -> {
                         remixQueue.add(pickedTrack)
                         repo.prebufferTrackInBackground(pickedTrack)
-                        statusBanner = "Added to Queue & Pre-buffered in RAM (0ms latency)"
+                        statusBanner = "Added '${pickedTrack.title}' to Auto-DJ Queue & Pre-buffered in RAM!"
                     }
                 }
             }
         }
     }
 
-    // Main Telemetry & Background RAM Pre-Buffer Loop
+    // Startup Library Scan + Autonomous Neural Director Telemetry Loop
     LaunchedEffect(Unit) {
         offlineTracks = repo.scanOfflineLibrary()
-        onlineTracks = repo.getBuiltInStudioTracks()
-        remixQueue.addAll(repo.getBuiltInStudioTracks().drop(2).take(4))
-
-        // Pre-buffer upcoming queue tracks in background for instant zero-lag transitions
+        if (offlineTracks.isEmpty()) {
+            activeCrateTab = 0
+        }
         scope.launch {
-            remixQueue.forEach { repo.prebufferTrackInBackground(it) }
+            onlineTracks = repo.searchOnlineSongs("Calvin Harris Tiesto Anyma")
         }
 
         while (true) {
@@ -169,27 +164,33 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             keyDeckB = repo.nativeGetDetectedCamelotKey(1)
             playingDeckA = repo.nativeGetDeckPlayState(0)
             playingDeckB = repo.nativeGetDeckPlayState(1)
+            loadedDeckA = repo.nativeHasTrackLoaded(0)
+            loadedDeckB = repo.nativeHasTrackLoaded(1)
             beatPhaseA = repo.nativeGetBeatPhase(0)
             beatPhaseB = repo.nativeGetBeatPhase(1)
             crossfader = repo.nativeGetCrossfader()
             morphInProgress = repo.nativeIsMorphActive()
             morphProgress = repo.nativeGetMorphProgress()
+            morphStage = repo.nativeGetMorphStage()
             isRecording = repo.nativeIsRecording()
             isRecordPaused = repo.nativeIsRecordPaused()
             if (isRecording) {
                 recordSeconds = repo.nativeGetRecordDurationSec()
             }
 
-            // Autonomous Invisible Ghost-Mix Auto-DJ Loop
+            // Autonomous Continuous Auto-DJ Queue Director
             if (autoDjEnabled && !morphInProgress) {
+                // Only auto-start from queue if user explicitly queued tracks and nothing is playing yet
                 if (!playingDeckA && !playingDeckB && remixQueue.isNotEmpty()) {
                     val starter = remixQueue.removeAt(0)
-                    deckATitle = starter.title
-                    deckATrackId = starter.id
-                    repo.loadTrackIntoDeck(0, starter, autoPlay = true)
-                    repo.nativeSetMasterParam(0, -1f)
-                    masterActiveDeck = 0
-                    statusBanner = "Auto-DJ Ghost-Mix Started: '${starter.title}' on DECK A"
+                    val ok = repo.loadTrackIntoDeck(0, starter, autoPlay = true)
+                    if (ok) {
+                        deckATitle = starter.title
+                        deckATrackId = starter.id
+                        repo.nativeSetMasterParam(0, -1f)
+                        masterActiveDeck = 0
+                        statusBanner = "Auto-DJ Queue Started: '${starter.title}' on DECK A"
+                    }
                 }
 
                 val remA = repo.nativeGetDeckRemainingSeconds(0)
@@ -199,31 +200,33 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     val nextTrack = if (remixQueue.isNotEmpty()) {
                         remixQueue.removeAt(0)
                     } else {
-                        repo.pickBestNextAutoDjTrack(onlineTracks + offlineTracks, bpmDeckA, keyDeckA, deckATrackId, deckBTrackId)
+                        repo.pickBestNextAutoDjTrack(offlineTracks + onlineTracks, bpmDeckA, keyDeckA, deckATrackId, deckBTrackId)
                     }
                     if (nextTrack != null) {
-                        scope.launch { repo.prebufferTrackInBackground(nextTrack) }
-                        statusBanner = "Invisible Ghost-Mix: DECK A ➔ DECK B ('${nextTrack.title}')"
-                        deckBTitle = nextTrack.title
-                        deckBTrackId = nextTrack.id
-                        repo.loadTrackIntoDeck(1, nextTrack, autoPlay = true)
-                        repo.nativeTriggerButterMorph(0, 1, 12.0)
-                        masterActiveDeck = 1
+                        statusBanner = "Autonomous Neural Mix: DECK A ➔ DECK B ('${nextTrack.title}')"
+                        val ok = repo.loadTrackIntoDeck(1, nextTrack, autoPlay = true)
+                        if (ok) {
+                            deckBTitle = nextTrack.title
+                            deckBTrackId = nextTrack.id
+                            repo.nativeTriggerButterMorph(0, 1, 13.0)
+                            masterActiveDeck = 1
+                        }
                     }
                 } else if (playingDeckB && masterActiveDeck == 1 && remB in 0.4f..14.0f) {
                     val nextTrack = if (remixQueue.isNotEmpty()) {
                         remixQueue.removeAt(0)
                     } else {
-                        repo.pickBestNextAutoDjTrack(onlineTracks + offlineTracks, bpmDeckB, keyDeckB, deckATrackId, deckBTrackId)
+                        repo.pickBestNextAutoDjTrack(offlineTracks + onlineTracks, bpmDeckB, keyDeckB, deckATrackId, deckBTrackId)
                     }
                     if (nextTrack != null) {
-                        scope.launch { repo.prebufferTrackInBackground(nextTrack) }
-                        statusBanner = "Invisible Ghost-Mix: DECK B ➔ DECK A ('${nextTrack.title}')"
-                        deckATitle = nextTrack.title
-                        deckATrackId = nextTrack.id
-                        repo.loadTrackIntoDeck(0, nextTrack, autoPlay = true)
-                        repo.nativeTriggerButterMorph(1, 0, 12.0)
-                        masterActiveDeck = 0
+                        statusBanner = "Autonomous Neural Mix: DECK B ➔ DECK A ('${nextTrack.title}')"
+                        val ok = repo.loadTrackIntoDeck(0, nextTrack, autoPlay = true)
+                        if (ok) {
+                            deckATitle = nextTrack.title
+                            deckATrackId = nextTrack.id
+                            repo.nativeTriggerButterMorph(1, 0, 13.0)
+                            masterActiveDeck = 0
+                        }
                     }
                 }
             }
@@ -239,12 +242,12 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             .padding(horizontal = 8.dp, vertical = 4.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // 1. REKORDBOX 7 / CDJ-3000X TOP COCKPIT & RECORDER BAR
+        // 1. TOP OPUS-QUAD / CDJ-3000X COCKPIT & MASTER WAV RECORDER BAR
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    Brush.horizontalGradient(listOf(Color(0xFF0B132B), Color(0xFF111D38), Color(0xFF0B132B))),
+                    Brush.horizontalGradient(listOf(Color(0xFF091122), Color(0xFF121F3B), Color(0xFF091122))),
                     RoundedCornerShape(8.dp)
                 )
                 .border(1.dp, BorderSteel, RoundedCornerShape(8.dp))
@@ -256,15 +259,15 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .background(CyanDeckA.copy(alpha = 0.22f), RoundedCornerShape(4.dp))
+                            .background(CyanDeckA.copy(alpha = 0.20f), RoundedCornerShape(4.dp))
                             .border(1.dp, CyanDeckA, RoundedCornerShape(4.dp))
                             .padding(horizontal = 5.dp, vertical = 1.dp)
                     ) {
-                        Text("1.28 GB GHOST-MIX PRO", color = CyanDeckA, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+                        Text("1.28 GB NEURAL DIRECTOR", color = CyanDeckA, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        "APEX-DJ // CDJ-3000X + DJM-V10 ULTRA-LUXURY WORKSTATION",
+                        "APEX-DJ // OPUS-QUAD + CDJ-3000X AUTONOMOUS STUDIO",
                         color = Color.White,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.ExtraBold,
@@ -344,11 +347,11 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // DUAL STACKED PARALLEL BEAT-GRID WAVEFORMS (Rekordbox 7 Phase-Lock View)
+        // DUAL STACKED PARALLEL BEAT-GRID WAVEFORMS (Rekordbox 7 Sub-Millisecond Sync View)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(42.dp)
+                .height(40.dp)
                 .background(PanelGunmetal, RoundedCornerShape(6.dp))
                 .border(1.dp, BorderSteel, RoundedCornerShape(6.dp))
                 .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -358,33 +361,30 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 val h = size.height
                 val midY = h / 2f
 
-                // Deck A waveform (Cyan) on top half
                 val binsA = repo.nativeGetWaveformOverview(0)
                 val barWA = w / binsA.size
                 for (i in binsA.indices) {
-                    val bh = binsA[i] * (h * 0.38f)
+                    val bh = binsA[i] * (h * 0.40f)
                     val x = i * barWA
-                    drawLine(CyanDeckA.copy(alpha = 0.8f), Offset(x, midY - 2f), Offset(x, midY - 2f - bh), strokeWidth = 2.5f)
+                    drawLine(CyanDeckA.copy(alpha = 0.85f), Offset(x, midY - 1.5f), Offset(x, midY - 1.5f - bh), strokeWidth = 2.5f)
                 }
 
-                // Deck B waveform (Orange) on bottom half
                 val binsB = repo.nativeGetWaveformOverview(1)
                 val barWB = w / binsB.size
                 for (i in binsB.indices) {
-                    val bh = binsB[i] * (h * 0.38f)
+                    val bh = binsB[i] * (h * 0.40f)
                     val x = i * barWB
-                    drawLine(OrangeDeckB.copy(alpha = 0.8f), Offset(x, midY + 2f), Offset(x, midY + 2f + bh), strokeWidth = 2.5f)
+                    drawLine(OrangeDeckB.copy(alpha = 0.85f), Offset(x, midY + 1.5f), Offset(x, midY + 1.5f + bh), strokeWidth = 2.5f)
                 }
 
-                // Sub-millisecond Beat-Grid Phase Lock Cursors
-                val curX = (0.5f + (beatPhaseA - beatPhaseB) * 0.25f) * w
-                drawLine(EmeraldVocal, Offset(curX, 0f), Offset(curX, h), strokeWidth = 2f)
+                val curX = (0.5f + (beatPhaseA - beatPhaseB) * 0.25f).coerceIn(0.05f, 0.95f) * w
+                drawLine(EmeraldVocal, Offset(curX, 0f), Offset(curX, h), strokeWidth = 2.5f)
             }
         }
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // 2. SEARCH, LOCAL ADD (DECK A / DECK B / QUEUE) & AUTO-DJ TRANSPORT BAR
+        // 2. SEARCH, LOCAL ADD (DECK A / DECK B / QUEUE) & AUTO-DJ BAR
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -414,10 +414,10 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 activeCrateTab = 0
                 crateExpanded = true
                 scope.launch {
-                    statusBanner = "Searching Global Libraries & Pre-buffering Harmonic Matches..."
+                    statusBanner = "Searching Online Streams & Pre-buffering Top Harmonic Matches..."
                     onlineTracks = repo.searchOnlineSongs(searchQuery)
-                    onlineTracks.forEach { repo.prebufferTrackInBackground(it) }
-                    statusBanner = "Found ${onlineTracks.size} tracks • 0ms RAM Pre-buffered!"
+                    onlineTracks.take(3).forEach { repo.prebufferTrackInBackground(it) }
+                    statusBanner = "Found ${onlineTracks.size} tracks • Ranked by Camelot Key & BPM!"
                 }
             }
 
@@ -442,7 +442,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 bgColor = if (autoDjEnabled) Color(0xFF064E3B) else Color(0xFF1E293B)
             ) {
                 autoDjEnabled = !autoDjEnabled
-                statusBanner = if (autoDjEnabled) "🟢 Invisible Ghost-Mix Auto-DJ ENGAGED" else "🔴 Auto-DJ OFF"
+                statusBanner = if (autoDjEnabled) "🟢 Autonomous Neural Auto-DJ ENGAGED" else "⚪ Auto-DJ Paused"
             }
         }
 
@@ -476,17 +476,19 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (remixQueue.isNotEmpty()) {
-                        HardwareActionButton("⚡ INVISIBLE GHOST-MIX NEXT", CrimsonBass, Color(0xFF450A0A)) {
+                        HardwareActionButton("⚡ AUTO-MIX NEXT QUEUE", CrimsonBass, Color(0xFF450A0A)) {
                             val nextSong = remixQueue.removeAt(0)
                             val fromDeck = if (playingDeckA && !playingDeckB) 0 else if (playingDeckB && !playingDeckA) 1 else masterActiveDeck
                             val toDeck = if (fromDeck == 0) 1 else 0
                             scope.launch {
-                                if (toDeck == 0) { deckATitle = nextSong.title; deckATrackId = nextSong.id }
-                                else { deckBTitle = nextSong.title; deckBTrackId = nextSong.id }
-                                statusBanner = "⚡ Instant Ghost-Mix ➔ '${nextSong.title}' on DECK ${if (toDeck == 0) "A" else "B"}"
-                                repo.loadTrackIntoDeck(toDeck, nextSong, autoPlay = true)
-                                repo.nativeTriggerButterMorph(fromDeck, toDeck, 10.0)
-                                masterActiveDeck = toDeck
+                                statusBanner = "⚡ Autonomous 4-Stage Neural Mix ➔ '${nextSong.title}'"
+                                val ok = repo.loadTrackIntoDeck(toDeck, nextSong, autoPlay = true)
+                                if (ok) {
+                                    if (toDeck == 0) { deckATitle = nextSong.title; deckATrackId = nextSong.id }
+                                    else { deckBTitle = nextSong.title; deckBTrackId = nextSong.id }
+                                    repo.nativeTriggerButterMorph(fromDeck, toDeck, 12.0)
+                                    masterActiveDeck = toDeck
+                                }
                             }
                         }
                     }
@@ -538,7 +540,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "👑 NEXT PERFECT SONG RECOMMENDED • ${topBadge.targetLabel} • [${topBadge.transitionAdvice}]",
+                                "👑 NEXT PERFECT SONG • ${topBadge.targetLabel} • [${topBadge.transitionAdvice}]",
                                 color = EmeraldVocal,
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.ExtraBold,
@@ -555,21 +557,23 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             HardwareActionButton(
-                                label = "⚡ SMART-MIX TO ${if (topBadge.recommendedDeck == 0) "DECK A" else "DECK B"}",
+                                label = "⚡ AUTO-MIX TO ${if (topBadge.recommendedDeck == 0) "DECK A" else "DECK B"}",
                                 borderColor = EmeraldVocal,
                                 bgColor = Color(0xFF047857)
                             ) {
                                 val toDeck = topBadge.recommendedDeck
                                 val fromDeck = if (toDeck == 0) 1 else 0
                                 scope.launch {
-                                    if (toDeck == 0) { deckATitle = topSong.title; deckATrackId = topSong.id }
-                                    else { deckBTitle = topSong.title; deckBTrackId = topSong.id }
-                                    repo.loadTrackIntoDeck(toDeck, topSong, autoPlay = true)
-                                    if (playingDeckA || playingDeckB) {
-                                        repo.nativeTriggerButterMorph(fromDeck, toDeck, 11.0)
+                                    val ok = repo.loadTrackIntoDeck(toDeck, topSong, autoPlay = true)
+                                    if (ok) {
+                                        if (toDeck == 0) { deckATitle = topSong.title; deckATrackId = topSong.id }
+                                        else { deckBTitle = topSong.title; deckBTrackId = topSong.id }
+                                        if (playingDeckA || playingDeckB) {
+                                            repo.nativeTriggerButterMorph(fromDeck, toDeck, 12.0)
+                                        }
+                                        masterActiveDeck = toDeck
+                                        statusBanner = "👑 Autonomous Neural Mix: '${topSong.title}' ➔ DECK ${if (toDeck == 0) "A" else "B"}!"
                                     }
-                                    masterActiveDeck = toDeck
-                                    statusBanner = "👑 Smart-Mixed '${topSong.title}' into DECK ${if (toDeck == 0) "A" else "B"}!"
                                 }
                             }
                             HardwareActionButton("+ QUEUE", AmberGold, Color(0xFF1E293B)) {
@@ -582,72 +586,96 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     Spacer(modifier = Modifier.height(4.dp))
                 }
 
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(102.dp)
-                        .background(Color(0xFF05070B), RoundedCornerShape(6.dp))
-                        .padding(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    items(rankedPairs) { (song, badge) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(PanelElevated, RoundedCornerShape(5.dp))
-                                .border(
-                                    width = 1.dp,
-                                    color = if (badge.isTopPick) EmeraldVocal.copy(alpha = 0.55f) else BorderSteel,
-                                    shape = RoundedCornerShape(5.dp)
-                                )
-                                .padding(horizontal = 6.dp, vertical = 3.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "${song.title} — ${song.artist}",
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "${badge.targetLabel} • ${badge.transitionAdvice}",
-                                    color = if (badge.recommendedDeck == 0) CyanDeckA else OrangeDeckB,
-                                    fontSize = 8.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                HardwareActionButton("DECK A", CyanDeckA, Color(0xFF082F49)) {
-                                    scope.launch {
-                                        deckATitle = song.title
-                                        deckATrackId = song.id
-                                        repo.loadTrackIntoDeck(0, song, autoPlay = true)
-                                        masterActiveDeck = 0
-                                        statusBanner = "Loaded '${song.title}' on DECK A"
-                                    }
+                if (rankedPairs.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(72.dp)
+                            .background(Color(0xFF05070B), RoundedCornerShape(6.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (activeCrateTab == 1) "Tap 📂 LOCAL A or 📂 LOCAL B to pick audio files, or switch to 🌐 ONLINE SEARCH"
+                            else "Queue is empty — Tap + QUEUE on any Online or Offline song for non-stop auto-remixing",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(104.dp)
+                            .background(Color(0xFF05070B), RoundedCornerShape(6.dp))
+                            .padding(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        items(rankedPairs) { (song, badge) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(PanelElevated, RoundedCornerShape(5.dp))
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (badge.isTopPick) EmeraldVocal.copy(alpha = 0.55f) else BorderSteel,
+                                        shape = RoundedCornerShape(5.dp)
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${song.title} — ${song.artist}",
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${badge.targetLabel} • ${badge.transitionAdvice}",
+                                        color = if (badge.recommendedDeck == 0) CyanDeckA else OrangeDeckB,
+                                        fontSize = 8.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
                                 }
-                                HardwareActionButton("DECK B", OrangeDeckB, Color(0xFF431407)) {
-                                    scope.launch {
-                                        deckBTitle = song.title
-                                        deckBTrackId = song.id
-                                        repo.loadTrackIntoDeck(1, song, autoPlay = true)
-                                        masterActiveDeck = 1
-                                        statusBanner = "Loaded '${song.title}' on DECK B"
+                                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    HardwareActionButton("DECK A", CyanDeckA, Color(0xFF082F49)) {
+                                        scope.launch {
+                                            statusBanner = "Loading '${song.title}' into DECK A..."
+                                            val ok = repo.loadTrackIntoDeck(0, song, autoPlay = true)
+                                            if (ok) {
+                                                deckATitle = song.title
+                                                deckATrackId = song.id
+                                                masterActiveDeck = 0
+                                                statusBanner = "Playing '${song.title}' on DECK A"
+                                            }
+                                        }
                                     }
-                                }
-                                if (activeCrateTab != 2) {
-                                    HardwareActionButton("+ QUEUE", AmberGold, Color(0xFF1E293B)) {
-                                        remixQueue.add(song)
-                                        scope.launch { repo.prebufferTrackInBackground(song) }
-                                        statusBanner = "Added '${song.title}' to Queue (${remixQueue.size})"
+                                    HardwareActionButton("DECK B", OrangeDeckB, Color(0xFF431407)) {
+                                        scope.launch {
+                                            statusBanner = "Loading '${song.title}' into DECK B..."
+                                            val ok = repo.loadTrackIntoDeck(1, song, autoPlay = true)
+                                            if (ok) {
+                                                deckBTitle = song.title
+                                                deckBTrackId = song.id
+                                                masterActiveDeck = 1
+                                                statusBanner = "Playing '${song.title}' on DECK B"
+                                            }
+                                        }
                                     }
-                                } else {
-                                    HardwareActionButton("✕ REMOVE", CrimsonBass, Color(0xFF1E293B)) {
-                                        remixQueue.remove(song)
+                                    if (activeCrateTab != 2) {
+                                        HardwareActionButton("+ QUEUE", AmberGold, Color(0xFF1E293B)) {
+                                            remixQueue.add(song)
+                                            scope.launch { repo.prebufferTrackInBackground(song) }
+                                            statusBanner = "Added '${song.title}' to Queue (${remixQueue.size})"
+                                        }
+                                    } else {
+                                        HardwareActionButton("✕ REMOVE", CrimsonBass, Color(0xFF1E293B)) {
+                                            remixQueue.remove(song)
+                                        }
                                     }
                                 }
                             }
@@ -671,6 +699,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 accent = CyanDeckA,
                 bpm = bpmDeckA,
                 camelotKey = keyDeckA,
+                hasTrack = loadedDeckA,
                 repo = repo,
                 modifier = Modifier.weight(1f)
             )
@@ -681,6 +710,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 accent = OrangeDeckB,
                 bpm = bpmDeckB,
                 camelotKey = keyDeckB,
+                hasTrack = loadedDeckB,
                 repo = repo,
                 modifier = Modifier.weight(1f)
             )
@@ -688,7 +718,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
         Spacer(modifier = Modifier.height(5.dp))
 
-        // 5. MASTER RUPERT NEVE TRANSFORMER & INVISIBLE GHOST-MIX TRANSITION CONSOLE
+        // 5. AUTONOMOUS NEURAL DIRECTOR & RUPERT NEVE MASTER CONSOLE (NO MANUAL MIX-TYPE BUTTONS)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -702,56 +732,64 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "DJM-V10 MASTER BUS // INVISIBLE GHOST-MIX ENGINE • RUPERT NEVE GLUE",
+                    "AUTONOMOUS 4-STAGE NEURAL TRANSITION DIRECTOR // RUPERT NEVE MASTER BUS",
                     color = AmberGold,
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.ExtraBold
                 )
-                if (morphInProgress) {
-                    Text(
-                        "⚡ GHOST-MIX IN PROGRESS: ${(morphProgress * 100).toInt()}%",
-                        color = EmeraldVocal,
-                        fontSize = 9.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
+                Text(
+                    text = if (morphInProgress) "⚡ AUTO-TRANSITION: ${(morphProgress * 100).toInt()}%" else "● AUTO-DIRECTOR STANDBY",
+                    color = if (morphInProgress) EmeraldVocal else Color(0xFF94A3B8),
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.ExtraBold
+                )
             }
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            val morphNames = listOf(
-                "1. INVISIBLE GHOST",
-                "2. BASS SWAP",
-                "3. VOCAL BRIDGE",
-                "4. HARMONIC MELT",
-                "5. PHASE LOCK",
-                "6. DROP SPLICE"
+            // Live 4-Stage Autonomous Neural Director Telemetry Indicators (Read-only automatic stages)
+            val stageLabels = listOf(
+                1 to "STAGE 1: HPF AIR WEAVE",
+                2 to "STAGE 2: VOCAL POCKET CARVE",
+                3 to "STAGE 3: DOWNBEAT BASS-SWAP",
+                4 to "STAGE 4: VELVET LPF OUTRO"
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                morphNames.forEachIndexed { idx, name ->
-                    val selected = selectedMorphStyle == idx
+                stageLabels.forEach { (stageNum, label) ->
+                    val isCurrent = morphInProgress && morphStage == stageNum
+                    val isDone = morphInProgress && morphStage > stageNum
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(5.dp))
-                            .background(if (selected) VioletNeural.copy(alpha = 0.28f) else PanelElevated)
-                            .border(1.dp, if (selected) VioletNeural else BorderSteel, RoundedCornerShape(5.dp))
-                            .clickable {
-                                selectedMorphStyle = idx
-                                repo.nativeSetMasterParam(14, idx.toFloat())
-                                statusBanner = "Transition Architecture Mode: $name"
-                            }
+                            .background(
+                                when {
+                                    isCurrent -> EmeraldVocal.copy(alpha = 0.28f)
+                                    isDone -> CyanDeckA.copy(alpha = 0.14f)
+                                    else -> PanelElevated
+                                }
+                            )
+                            .border(
+                                1.dp,
+                                when {
+                                    isCurrent -> EmeraldVocal
+                                    isDone -> CyanDeckA
+                                    else -> BorderSteel
+                                },
+                                RoundedCornerShape(5.dp)
+                            )
                             .padding(vertical = 5.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            name,
-                            color = if (selected) Color.White else Color(0xFF94A3B8),
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
+                            text = label,
+                            color = if (isCurrent) Color.White else Color(0xFF94A3B8),
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1
                         )
                     }
                 }
@@ -760,36 +798,23 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             Spacer(modifier = Modifier.height(6.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ProHardwareBarFader("ISO LOW", isoLow, -1f..1f, CrimsonBass, Modifier.weight(1f)) {
+                ProHardwareBarFader("MASTER ISO LOW", isoLow, -1f..1f, CrimsonBass, Modifier.weight(1f)) {
                     isoLow = it; repo.nativeSetMasterParam(1, it)
                 }
-                ProHardwareBarFader("ISO MID", isoMid, -1f..1f, EmeraldVocal, Modifier.weight(1f)) {
+                ProHardwareBarFader("MASTER ISO MID", isoMid, -1f..1f, EmeraldVocal, Modifier.weight(1f)) {
                     isoMid = it; repo.nativeSetMasterParam(2, it)
                 }
-                ProHardwareBarFader("ISO HIGH", isoHigh, -1f..1f, CyanDeckA, Modifier.weight(1f)) {
+                ProHardwareBarFader("MASTER ISO HIGH", isoHigh, -1f..1f, CyanDeckA, Modifier.weight(1f)) {
                     isoHigh = it; repo.nativeSetMasterParam(3, it)
                 }
-                ProHardwareBarFader("NEVE DRIVE", neveDrive, 0f..1f, AmberGold, Modifier.weight(1f)) {
+                ProHardwareBarFader("NEVE TRANSFORMER", neveDrive, 0f..1f, AmberGold, Modifier.weight(1f)) {
                     neveDrive = it; repo.nativeSetMasterParam(4, it)
                 }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ProHardwareBarFader("SPECTRAL CARVING", neuralSidechain, 0f..1f, CyanDeckA, Modifier.weight(1f)) {
+                ProHardwareBarFader("POCKET DUCKING", neuralSidechain, 0f..1f, CyanDeckA, Modifier.weight(1f)) {
                     neuralSidechain = it; repo.nativeSetMasterParam(11, it)
                 }
-                ProHardwareBarFader("SUB-BASS BOOM", neuralSubBoom, 0f..1f, CrimsonBass, Modifier.weight(1f)) {
-                    neuralSubBoom = it; repo.nativeSetMasterParam(12, it)
-                }
-                ProHardwareBarFader("AIR EXCITER", neuralAirGlow, 0f..1f, VioletNeural, Modifier.weight(1f)) {
+                ProHardwareBarFader("SILK AIR GLOW", neuralAirGlow, 0f..1f, VioletNeural, Modifier.weight(1f)) {
                     neuralAirGlow = it; repo.nativeSetMasterParam(13, it)
-                }
-                ProHardwareBarFader("14 BEAT FX WET", beatFxWet, 0f..1f, OrangeDeckB, Modifier.weight(1f)) {
-                    beatFxWet = it
-                    repo.nativeSetMasterParam(8, 2f)
-                    repo.nativeSetMasterParam(9, it)
                 }
             }
 
@@ -800,10 +825,10 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                HardwareActionButton("⚡ INVISIBLE GHOST-MIX A ➔ B", CyanDeckA, Color(0xFF082F49)) {
-                    repo.nativeTriggerButterMorph(0, 1, 12.0)
+                HardwareActionButton("⚡ AUTO NEURAL MIX A ➔ B", CyanDeckA, Color(0xFF082F49)) {
+                    repo.nativeTriggerButterMorph(0, 1, 13.0)
                     masterActiveDeck = 1
-                    statusBanner = "⚡ Executing Invisible Ghost-Mix Transition: A ➔ B..."
+                    statusBanner = "⚡ Autonomous 4-Stage Neural Mix Engaged: DECK A ➔ DECK B..."
                 }
 
                 Box(modifier = Modifier.weight(1f)) {
@@ -819,10 +844,10 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     }
                 }
 
-                HardwareActionButton("⚡ INVISIBLE GHOST-MIX B ➔ A", OrangeDeckB, Color(0xFF431407)) {
-                    repo.nativeTriggerButterMorph(1, 0, 12.0)
+                HardwareActionButton("⚡ AUTO NEURAL MIX B ➔ A", OrangeDeckB, Color(0xFF431407)) {
+                    repo.nativeTriggerButterMorph(1, 0, 13.0)
                     masterActiveDeck = 0
-                    statusBanner = "⚡ Executing Invisible Ghost-Mix Transition: B ➔ A..."
+                    statusBanner = "⚡ Autonomous 4-Stage Neural Mix Engaged: DECK B ➔ DECK A..."
                 }
             }
         }
@@ -837,12 +862,13 @@ fun ProClubDeckConsole(
     accent: Color,
     bpm: Float,
     camelotKey: Int,
+    hasTrack: Boolean,
     repo: OnlineAndLocalRepository,
     modifier: Modifier = Modifier
 ) {
     var playing by remember { mutableStateOf(false) }
     var trackProgress by remember { mutableFloatStateOf(0f) }
-    var remSeconds by remember { mutableFloatStateOf(64f) }
+    var remSeconds by remember { mutableFloatStateOf(0f) }
     var activeDeckRackTab by remember { mutableIntStateOf(0) }
     var platterAngle by remember { mutableFloatStateOf(0f) }
 
@@ -851,15 +877,11 @@ fun ProClubDeckConsole(
     var eqLm by remember { mutableFloatStateOf(0f) }
     var eqHm by remember { mutableFloatStateOf(0f) }
     var eqHi by remember { mutableFloatStateOf(0f) }
-    var vcfCutoff by remember { mutableFloatStateOf(0.85f) }
-    var vcfCrunch by remember { mutableFloatStateOf(0f) }
-    var pitchSemi by remember { mutableFloatStateOf(0f) }
-    var transientPunch by remember { mutableFloatStateOf(0.30f) }
-    var stereoWiden by remember { mutableFloatStateOf(0.25f) }
+    var vcfCutoff by remember { mutableFloatStateOf(0.5f) }
 
     val stemGains = remember { mutableStateListOf(1f, 1f, 1f, 1f, 1f) }
     val stemEnvs = remember { mutableStateListOf(0f, 0f, 0f, 0f, 0f) }
-    var waveformBins by remember { mutableStateOf(FloatArray(64) { 0.40f }) }
+    var waveformBins by remember { mutableStateOf(FloatArray(64) { 0.08f }) }
 
     LaunchedEffect(deckIndex) {
         while (true) {
@@ -900,9 +922,13 @@ fun ProClubDeckConsole(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "%.1f BPM  •  KEY %dA  •  REM -%02d:%02d".format(
-                        bpm, camelotKey, (remSeconds.toInt() / 60), (remSeconds.toInt() % 60)
-                    ),
+                    text = if (hasTrack) {
+                        "%.1f BPM  •  KEY %dA  •  REM -%02d:%02d".format(
+                            bpm, camelotKey, (remSeconds.toInt() / 60), (remSeconds.toInt() % 60)
+                        )
+                    } else {
+                        "STANDBY  •  SELECT TRACK ABOVE TO LOAD"
+                    },
                     color = AmberGold,
                     fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace
@@ -915,14 +941,16 @@ fun ProClubDeckConsole(
                     .background(if (playing) EmeraldVocal else Color(0xFF1E293B))
                     .border(1.dp, if (playing) EmeraldVocal else accent, RoundedCornerShape(6.dp))
                     .clickable {
-                        val nextState = !playing
-                        playing = nextState
-                        repo.nativeSetDeckPlayState(deckIndex, nextState)
+                        if (hasTrack) {
+                            val nextState = !playing
+                            playing = nextState
+                            repo.nativeSetDeckPlayState(deckIndex, nextState)
+                        }
                     }
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(
-                    text = if (playing) "▶ PLAYING" else "⏸ CUE / PLAY",
+                    text = if (playing) "▶ PLAYING" else "⏸ PLAY",
                     color = if (playing) Color.Black else Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.ExtraBold,
@@ -941,7 +969,7 @@ fun ProClubDeckConsole(
         ) {
             Box(
                 modifier = Modifier
-                    .size(86.dp)
+                    .size(84.dp)
                     .pointerInput(Unit) {
                         detectDragGestures(
                             onDragStart = { repo.nativeSetChannelParam(deckIndex, 18, 1.4f) },
@@ -973,7 +1001,7 @@ fun ProClubDeckConsole(
                     drawCircle(color = CrimsonBass, radius = radius * 0.42f, style = Stroke(width = 2f))
                 }
                 Text(
-                    text = "${ camelotKey }A",
+                    text = if (hasTrack) "${camelotKey}A" else "--",
                     color = Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.ExtraBold,
@@ -992,7 +1020,7 @@ fun ProClubDeckConsole(
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp)
+                        .height(52.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .background(Color(0xFF06090F))
                         .border(1.dp, BorderSteel, RoundedCornerShape(6.dp))
@@ -1017,7 +1045,7 @@ fun ProClubDeckConsole(
 
                     for (i in 0 until binCount) {
                         val normIdx = i.toFloat() / binCount
-                        val amp = (waveformBins[i] * (0.65f + 0.35f * stemEnvs[1])).coerceIn(0.08f, 0.96f)
+                        val amp = (waveformBins[i] * (0.70f + 0.30f * stemEnvs[1])).coerceIn(0.06f, 0.96f)
                         val barH = amp * (h * 0.85f)
                         val x = i * barW
 
@@ -1048,7 +1076,7 @@ fun ProClubDeckConsole(
                     HardwareMiniPad("CUE 1", accent) { repo.nativeTriggerHotCue(deckIndex, 0) }
                     HardwareMiniPad("CUE 2", accent) { repo.nativeTriggerHotCue(deckIndex, 1) }
                     HardwareMiniPad("4-BEAT", EmeraldVocal) { repo.nativeToggleBeatLoop(deckIndex, 4.0) }
-                    HardwareMiniPad("1/2 STUTTER", AmberGold) { repo.nativeTriggerNeuralPadMacro(deckIndex, 6) }
+                    HardwareMiniPad("1/2 LOOP", AmberGold) { repo.nativeTriggerNeuralPadMacro(deckIndex, 6) }
                     HardwareMiniPad("BRAKE", CrimsonBass) { repo.nativeSetChannelParam(deckIndex, 16, 1f) }
                 }
             }
@@ -1057,8 +1085,8 @@ fun ProClubDeckConsole(
         Spacer(modifier = Modifier.height(5.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            CrateTabChip("🎛 5 NEURAL STEMS & PADS", activeDeckRackTab == 0, accent) { activeDeckRackTab = 0 }
-            CrateTabChip("🎚 4-BAND EQ • VCF • KEY", activeDeckRackTab == 1, AmberGold) { activeDeckRackTab = 1 }
+            CrateTabChip("🎛 5 BIT-EXACT STEMS & PADS", activeDeckRackTab == 0, accent) { activeDeckRackTab = 0 }
+            CrateTabChip("🎚 4-BAND EQ & BIPOLAR VCF", activeDeckRackTab == 1, AmberGold) { activeDeckRackTab = 1 }
         }
 
         Spacer(modifier = Modifier.height(5.dp))
@@ -1067,7 +1095,7 @@ fun ProClubDeckConsole(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(110.dp)
+                    .height(106.dp)
                     .background(Color(0xFF080B12), RoundedCornerShape(6.dp))
                     .border(1.dp, BorderSteel, RoundedCornerShape(6.dp))
                     .padding(6.dp),
@@ -1078,7 +1106,7 @@ fun ProClubDeckConsole(
                     Triple("SUB-BASS", CrimsonBass, 10),
                     Triple("SYNTH", AmberGold, 11),
                     Triple("VOCALS", EmeraldVocal, 12),
-                    Triple("AIR/SNAP", VioletNeural, 22)
+                    Triple("HIGH AIR", VioletNeural, 22)
                 )
                 stemConfigs.forEachIndexed { sIdx, (label, col, paramId) ->
                     VerticalStemHardwareFader(
@@ -1107,14 +1135,14 @@ fun ProClubDeckConsole(
             Spacer(modifier = Modifier.height(4.dp))
 
             val macroLabels = listOf(
-                "MIC ACAPELLA" to EmeraldVocal,
+                "VOCAL ACAPELLA" to EmeraldVocal,
                 "INST ONLY" to CyanDeckA,
                 "SUB+DRUMS" to CrimsonBass,
                 "RESET 100%" to Color.White,
-                "RISER SWEEP" to VioletNeural,
-                "SUB IMPACT" to OrangeDeckB,
+                "HPF SWEEP" to VioletNeural,
+                "LPF DUB" to OrangeDeckB,
                 "1/2 ROLL" to AmberGold,
-                "+2 SEMI LIFT" to CyanDeckA
+                "1/4 FILL" to CyanDeckA
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 for (i in 0 until 4) {
@@ -1138,7 +1166,7 @@ fun ProClubDeckConsole(
                     .background(Color(0xFF080B12), RoundedCornerShape(6.dp))
                     .border(1.dp, BorderSteel, RoundedCornerShape(6.dp))
                     .padding(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ProHardwareBarFader("EQ LOW (SUB)", eqLo, -1f..1f, CrimsonBass, Modifier.weight(1f)) {
@@ -1155,22 +1183,8 @@ fun ProClubDeckConsole(
                     }
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ProHardwareBarFader("XONE VCF CUT", vcfCutoff, 0f..1f, AmberGold, Modifier.weight(1f)) {
+                    ProHardwareBarFader("BIPOLAR VCF (LPF ◄ 0.5 ► HPF)", vcfCutoff, 0f..1f, AmberGold, Modifier.weight(1f)) {
                         vcfCutoff = it; repo.nativeSetChannelParam(deckIndex, 7, it)
-                    }
-                    ProHardwareBarFader("VCF CRUNCH", vcfCrunch, 0f..1f, CrimsonBass, Modifier.weight(1f)) {
-                        vcfCrunch = it; repo.nativeSetChannelParam(deckIndex, 8, it)
-                    }
-                    ProHardwareBarFader("KEY SEMITONE", pitchSemi, -6f..6f, VioletNeural, Modifier.weight(1f)) {
-                        pitchSemi = it; repo.nativeSetChannelParam(deckIndex, 19, it)
-                    }
-                    ProHardwareBarFader("3D WIDENER", stereoWiden, 0f..1f, CyanDeckA, Modifier.weight(1f)) {
-                        stereoWiden = it; repo.nativeSetChannelParam(deckIndex, 21, it)
-                    }
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ProHardwareBarFader("TRANSIENT PUNCH", transientPunch, 0f..1f, EmeraldVocal, Modifier.weight(1f)) {
-                        transientPunch = it; repo.nativeSetChannelParam(deckIndex, 20, it)
                     }
                     ProHardwareBarFader("CHANNEL FADER", fader, 0f..1f, Color.White, Modifier.weight(1f)) {
                         fader = it; repo.nativeSetChannelParam(deckIndex, 0, it)
@@ -1209,20 +1223,20 @@ fun VerticalStemHardwareFader(
                 .pointerInput(Unit) {
                     detectDragGestures { change, _ ->
                         val norm = 1.0f - (change.position.y / size.height).coerceIn(0f, 1f)
-                        onValueChange((norm * 1.35f).coerceIn(0f, 1.35f))
+                        onValueChange((norm * 1.25f).coerceIn(0f, 1.25f))
                     }
                 }
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
                         val norm = 1.0f - (offset.y / size.height).coerceIn(0f, 1f)
-                        onValueChange((norm * 1.35f).coerceIn(0f, 1.35f))
+                        onValueChange((norm * 1.25f).coerceIn(0f, 1.25f))
                     }
                 }
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val w = size.width
                 val h = size.height
-                val normGain = (gainValue / 1.35f).coerceIn(0f, 1f)
+                val normGain = (gainValue / 1.25f).coerceIn(0f, 1f)
                 val envNorm = (liveEnvelope * normGain).coerceIn(0f, 1f)
 
                 drawRoundRect(

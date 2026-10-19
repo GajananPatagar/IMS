@@ -12,8 +12,8 @@ android {
         applicationId = "com.apexdj.butter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "6.0.0-1.28GB-InvisibleGhostMix-Pro"
+        versionCode = 7
+        versionName = "7.0.0-1.28GB-AutonomousNeuralDirector"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
