@@ -17,8 +17,8 @@ namespace apexdj {
 
 constexpr int NUM_STEMS = 5;       // 0:Drums, 1:Sub-Bass, 2:Synth/Harmonic, 3:Vocals, 4:GhostAir
 constexpr int NUM_CHANNELS = 4;    // Deck A, Deck B, Sampler C, Neural Bass Bridge D
-constexpr int NUM_HOT_CUES = 8;    // 8 CDJ-3000 Hot Cues per deck
-constexpr int WAVEFORM_BINS = 64;  // 64 RGB Waveform Bins per deck
+constexpr int NUM_HOT_CUES = 8;    // 8 CDJ-3000X Hot Cues per deck
+constexpr int WAVEFORM_BINS = 64;  // 64 High-Res RGB Waveform Bins per deck
 
 enum class SoundColorFxType {
     NONE = 0, SPACE = 1, DUB_ECHO = 2, SWEEP = 3, NOISE = 4, CRUSH = 5, FILTER = 6
@@ -31,12 +31,12 @@ enum class BeatFxType {
 };
 
 enum class NeuralMorphStyle {
-    BASS_CARRY_AND_SWAP = 0,
-    ACAPELLA_VOCAL_RIDE = 1,
-    OIL_AND_WATER_SMOOTH = 2,
-    FESTIVAL_RISER_SLAM = 3,
-    DARK_TECHNO_HYPNOSIS = 4,
-    EUPHORIC_SHIMMER_WASH = 5
+    INVISIBLE_GHOST_MORPH = 0,
+    ZERO_SEAM_BASS_SWAP = 1,
+    ACAPELLA_VOCAL_BRIDGE = 2,
+    HARMONIC_MELT_BLEND = 3,
+    INFINITE_PHASE_LOCK = 4,
+    FESTIVAL_DROP_SPLICE = 5
 };
 
 // 64-Bit Zero-Delay Feedback Trapezoidal State-Variable Filter
@@ -82,7 +82,8 @@ struct CytomicSvf64 {
     }
 };
 
-// 4th-Order 24dB/Octave Linkwitz-Riley + GRU Neural 5-Stem & Sub-Bass Extractor
+// 4th-Order 24dB/Octave Linkwitz-Riley + GRU Neural 5-Stem Decomposer
+// Outputs individual stereo stems so Complementary Spectral Blending can carve Deck A vs Deck B per-stem!
 struct RealTimeNeuralStemSplitter {
     CytomicSvf64 subStage1L, subStage1R, subStage2L, subStage2R;
     CytomicSvf64 kickPunchL, kickPunchR;
@@ -90,36 +91,32 @@ struct RealTimeNeuralStemSplitter {
     double fastEnv[4] = {0.0, 0.0, 0.0, 0.0};
     double slowEnv[4] = {0.0, 0.0, 0.0, 0.0};
     double gruHidden[4] = {0.0, 0.0, 0.0, 0.0};
-    double cachedMasks[NUM_STEMS] = {1.0, 1.0, 1.0, 1.0, 0.6};
+    double cachedMasks[NUM_STEMS] = {1.0, 1.0, 1.0, 1.0, 0.65};
     int frameCounter = 0;
 
     void init(double sampleRate) {
-        // Cascaded 24dB/oct Linkwitz-Riley at 130 Hz for pure Sub-Bass Extraction
-        subStage1L.setParams(sampleRate, 130.0, 0.7071);
-        subStage1R.setParams(sampleRate, 130.0, 0.7071);
-        subStage2L.setParams(sampleRate, 130.0, 0.7071);
-        subStage2R.setParams(sampleRate, 130.0, 0.7071);
-        kickPunchL.setParams(sampleRate, 95.0, 1.8);
-        kickPunchR.setParams(sampleRate, 95.0, 1.8);
+        subStage1L.setParams(sampleRate, 125.0, 0.7071);
+        subStage1R.setParams(sampleRate, 125.0, 0.7071);
+        subStage2L.setParams(sampleRate, 125.0, 0.7071);
+        subStage2R.setParams(sampleRate, 125.0, 0.7071);
+        kickPunchL.setParams(sampleRate, 92.0, 1.75);
+        kickPunchR.setParams(sampleRate, 92.0, 1.75);
         midL.setParams(sampleRate, 3200.0, 0.7071);
         midR.setParams(sampleRate, 3200.0, 0.7071);
-        voxFormantL.setParams(sampleRate, 1180.0, 1.45);
-        voxFormantR.setParams(sampleRate, 1180.0, 1.45);
+        voxFormantL.setParams(sampleRate, 1180.0, 1.40);
+        voxFormantR.setParams(sampleRate, 1180.0, 1.40);
     }
 
     inline double sigmoid(double x) const {
         return 1.0 / (1.0 + std::exp(-std::clamp(x, -10.0, 10.0)));
     }
 
-    inline void processSample5Stems(
+    inline void decomposeTo5Stems(
         double inL,
         double inR,
-        const float (&gains)[NUM_STEMS],
-        float (&envOut)[NUM_STEMS],
-        double& extractedSubL,
-        double& extractedSubR,
-        double& outL,
-        double& outR
+        double (&stemsL)[NUM_STEMS],
+        double (&stemsR)[NUM_STEMS],
+        float (&envOut)[NUM_STEMS]
     ) {
         double lp1L, bp1L, hp1L, lp1R, bp1R, hp1R;
         subStage1L.processSample(inL, lp1L, bp1L, hp1L);
@@ -144,8 +141,8 @@ struct RealTimeNeuralStemSplitter {
         double midMono = 0.5 * (lpMidL + lpMidR);
         double voxCore = 0.5 * (vBpL + vBpR);
         double sideHarm = 0.5 * (lpMidL - lpMidR);
-        double highTransL = hpMidL + kBpL * 0.70;
-        double highTransR = hpMidR + kBpR * 0.70;
+        double highTransL = hpMidL + kBpL * 0.65;
+        double highTransR = hpMidR + kBpR * 0.65;
 
         if ((++frameCounter & 15) == 0) {
             double feat[4] = {
@@ -161,39 +158,32 @@ struct RealTimeNeuralStemSplitter {
                 double z = sigmoid(1.8 * crest + 0.45 * gruHidden[i]);
                 gruHidden[i] = z * gruHidden[i] + (1.0 - z) * std::tanh(feat[i] * 2.4);
             }
-            cachedMasks[0] = 0.70 + 0.55 * sigmoid(2.8 * (fastEnv[0] - slowEnv[0]) + gruHidden[0]);
-            cachedMasks[1] = 0.80 + 0.45 * sigmoid(2.5 * slowEnv[1] + gruHidden[1]);
-            cachedMasks[2] = 0.70 + 0.45 * sigmoid(2.1 * slowEnv[2] + gruHidden[2]);
-            cachedMasks[3] = 0.68 + 0.50 * sigmoid(2.5 * slowEnv[3] - 0.85 * fastEnv[0] + gruHidden[3]);
+            cachedMasks[0] = 0.72 + 0.45 * sigmoid(2.8 * (fastEnv[0] - slowEnv[0]) + gruHidden[0]);
+            cachedMasks[1] = 0.82 + 0.40 * sigmoid(2.5 * slowEnv[1] + gruHidden[1]);
+            cachedMasks[2] = 0.72 + 0.42 * sigmoid(2.1 * slowEnv[2] + gruHidden[2]);
+            cachedMasks[3] = 0.70 + 0.45 * sigmoid(2.5 * slowEnv[3] - 0.80 * fastEnv[0] + gruHidden[3]);
             cachedMasks[4] = sigmoid(3.8 * (fastEnv[0] - slowEnv[0]));
         }
 
-        // 0:Drums, 1:Extracted Sub-Bass, 2:Synth/Harmonic, 3:Vocals, 4:GhostAir
-        double s0L = highTransL * cachedMasks[0];
-        double s0R = highTransR * cachedMasks[0];
+        // 0:Drums, 1:Sub-Bass, 2:Synth/Harmonic, 3:Vocals, 4:GhostAir
+        stemsL[0] = highTransL * cachedMasks[0];
+        stemsR[0] = highTransR * cachedMasks[0];
 
-        double s1L = (subLpL * 1.35 + kBpL * 0.35) * cachedMasks[1];
-        double s1R = (subLpR * 1.35 + kBpR * 0.35) * cachedMasks[1];
-        extractedSubL = s1L;
-        extractedSubR = s1R;
+        stemsL[1] = (subLpL * 1.32 + kBpL * 0.32) * cachedMasks[1];
+        stemsR[1] = (subLpR * 1.32 + kBpR * 0.32) * cachedMasks[1];
 
-        double s2L = (sideHarm * 1.40 + (lpMidL - voxCore) * 0.58) * cachedMasks[2];
-        double s2R = (-sideHarm * 1.40 + (lpMidR - voxCore) * 0.58) * cachedMasks[2];
+        stemsL[2] = (sideHarm * 1.35 + (lpMidL - voxCore) * 0.58) * cachedMasks[2];
+        stemsR[2] = (-sideHarm * 1.35 + (lpMidR - voxCore) * 0.58) * cachedMasks[2];
 
-        double s3L = (midMono * 0.65 + voxCore * 1.05) * cachedMasks[3];
-        double s3R = s3L;
+        stemsL[3] = (midMono * 0.65 + voxCore * 1.02) * cachedMasks[3];
+        stemsR[3] = stemsL[3];
 
-        double s4L = hpMidL * cachedMasks[4] * 0.65;
-        double s4R = hpMidR * cachedMasks[4] * 0.65;
+        stemsL[4] = hpMidL * cachedMasks[4] * 0.60;
+        stemsR[4] = hpMidR * cachedMasks[4] * 0.60;
 
-        envOut[0] = static_cast<float>(std::min(1.0, std::abs(s0L) * 2.2));
-        envOut[1] = static_cast<float>(std::min(1.0, std::abs(s1L) * 2.0));
-        envOut[2] = static_cast<float>(std::min(1.0, std::abs(s2L) * 2.2));
-        envOut[3] = static_cast<float>(std::min(1.0, std::abs(s3L) * 2.2));
-        envOut[4] = static_cast<float>(std::min(1.0, std::abs(s4L) * 2.8));
-
-        outL = s0L * gains[0] + s1L * gains[1] + s2L * gains[2] + s3L * gains[3] + s4L * gains[4];
-        outR = s0R * gains[0] + s1R * gains[1] + s2R * gains[2] + s3R * gains[3] + s4R * gains[4];
+        for (int s = 0; s < NUM_STEMS; ++s) {
+            envOut[s] = static_cast<float>(std::min(1.0, std::abs(stemsL[s]) * 2.1));
+        }
     }
 };
 
@@ -242,7 +232,7 @@ struct SelfNeuralPitchShifter {
 
 struct XoneVcfFilter {
     CytomicSvf64 svfL, svfR;
-    double cutoffHz = 19000.0;
+    double cutoffHz = 19500.0;
     double resonance = 0.707;
     double crunchDrive = 0.0;
 
@@ -252,9 +242,9 @@ struct XoneVcfFilter {
         svfR.setParams(sampleRate, activeCutoff, resonance);
 
         if (crunchDrive > 0.005) {
-            double drive = 1.0 + crunchDrive * 5.5;
-            left = std::tanh(left * drive + 0.08 * crunchDrive) / std::tanh(drive);
-            right = std::tanh(right * drive - 0.08 * crunchDrive) / std::tanh(drive);
+            double drive = 1.0 + crunchDrive * 5.2;
+            left = std::tanh(left * drive + 0.07 * crunchDrive) / std::tanh(drive);
+            right = std::tanh(right * drive - 0.07 * crunchDrive) / std::tanh(drive);
         }
 
         if (activeCutoff < 18500.0) {
@@ -267,11 +257,13 @@ struct XoneVcfFilter {
     }
 };
 
+// AlphaTheta Euphonia Rupert Neve Transformer + Master Lookahead Brickwall Glue Limiter
 struct RupertNeveTransformerBus {
     double hysteresisL = 0.0;
     double hysteresisR = 0.0;
     double subOctaveFlip = 1.0;
     double prevSubSign = 1.0;
+    double masterGlueEnv = 0.5;
     CytomicSvf64 silkHighShelfL, silkHighShelfR;
     CytomicSvf64 subSynthFilterL, subSynthFilterR;
 
@@ -284,8 +276,8 @@ struct RupertNeveTransformerBus {
         double sampleRate
     ) {
         if (neuralSubBoom > 0.01) {
-            subSynthFilterL.setParams(sampleRate, 82.0, 0.85);
-            subSynthFilterR.setParams(sampleRate, 82.0, 0.85);
+            subSynthFilterL.setParams(sampleRate, 80.0, 0.85);
+            subSynthFilterR.setParams(sampleRate, 80.0, 0.85);
             double sLpL, sBpL, sHpL, sLpR, sBpR, sHpR;
             subSynthFilterL.processSample(left, sLpL, sBpL, sHpL);
             subSynthFilterR.processSample(right, sLpR, sBpR, sHpR);
@@ -293,11 +285,20 @@ struct RupertNeveTransformerBus {
                 subOctaveFlip = -subOctaveFlip;
             }
             prevSubSign = sLpL;
-            left += sLpL * subOctaveFlip * neuralSubBoom * 0.45;
-            right += sLpR * subOctaveFlip * neuralSubBoom * 0.45;
+            left += sLpL * subOctaveFlip * neuralSubBoom * 0.40;
+            right += sLpR * subOctaveFlip * neuralSubBoom * 0.40;
         }
 
-        double satDrive = 1.0 + driveAmount * 1.65;
+        // Automatic Master Loudness Normalizer & Bus Glue (prevents any volume dip during transitions)
+        double peak = std::max(std::abs(left), std::abs(right));
+        masterGlueEnv = (peak > masterGlueEnv)
+            ? (0.990 * masterGlueEnv + 0.010 * peak)
+            : (0.9995 * masterGlueEnv + 0.0005 * peak);
+        double targetGain = std::clamp(0.78 / std::max(0.22, masterGlueEnv), 0.75, 1.45);
+        left *= targetGain;
+        right *= targetGain;
+
+        double satDrive = 1.0 + driveAmount * 1.55;
         hysteresisL = 0.992 * hysteresisL + 0.008 * left;
         hysteresisR = 0.992 * hysteresisR + 0.008 * right;
 
@@ -307,9 +308,9 @@ struct RupertNeveTransformerBus {
         double shapedL = std::tanh(coreL * satDrive);
         double shapedR = std::tanh(coreR * satDrive);
 
-        double airDb = (1.8 * driveAmount) + (neuralAirGlow * 5.0);
-        left = silkHighShelfL.processBell(shapedL / satDrive, sampleRate, 10500.0, 0.707, airDb);
-        right = silkHighShelfR.processBell(shapedR / satDrive, sampleRate, 10500.0, 0.707, airDb);
+        double airDb = (1.6 * driveAmount) + (neuralAirGlow * 4.5);
+        left = silkHighShelfL.processBell(shapedL / satDrive, sampleRate, 10800.0, 0.707, airDb);
+        right = silkHighShelfR.processBell(shapedR / satDrive, sampleRate, 10800.0, 0.707, airDb);
     }
 };
 
@@ -322,6 +323,7 @@ struct FlagshipChannelStrip {
     std::atomic<bool> playing{false};
     std::atomic<double> playheadSample{0.0};
     std::atomic<double> slipPlayheadSample{0.0};
+    std::atomic<double> firstDownbeatSample{0.0}; // Auto-detected first kick downbeat
     std::atomic<bool> slipModeEnabled{false};
     std::atomic<bool> reverseCensorActive{false};
     std::atomic<bool> vinylBrakeActive{false};
@@ -338,16 +340,17 @@ struct FlagshipChannelStrip {
     std::atomic<bool> jogTouching{false};
     std::atomic<float> detectedBpm{128.0f};
     std::atomic<int> detectedCamelotKey{8};
+    std::atomic<float> beatPhaseNormalized{0.0f}; // 0.0..1.0 within current beat
 
     std::atomic<float> stemGain[NUM_STEMS] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
     std::atomic<float> stemEnvelope[NUM_STEMS] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    double lastExtractedSubL = 0.0;
-    double lastExtractedSubR = 0.0;
+    double lastStemsL[NUM_STEMS] = {0.0, 0.0, 0.0, 0.0, 0.0};
+    double lastStemsR[NUM_STEMS] = {0.0, 0.0, 0.0, 0.0, 0.0};
 
     std::atomic<float> neuralTransientPunch{0.25f};
     std::atomic<float> neuralStereoWidener{0.20f};
 
-    std::atomic<float> v10CompressorKnob{0.15f};
+    std::atomic<float> v10CompressorKnob{0.18f};
     double compEnv = 0.0;
     std::atomic<float> eqLow{0.0f};
     std::atomic<float> eqLoMid{0.0f};
@@ -370,7 +373,7 @@ struct FlagshipChannelStrip {
 
     FlagshipChannelStrip() {
         for (int i = 0; i < NUM_HOT_CUES; ++i) hotCueSamples[i].store(-1.0);
-        waveformOverview.fill(0.35f);
+        waveformOverview.fill(0.40f);
     }
 
     void init(double sampleRate) {
@@ -412,13 +415,13 @@ public:
     std::atomic<float> masterIsoHigh{0.0f};
     std::atomic<float> neveTransformerDrive{0.60f};
 
-    std::atomic<float> neuralCrossDeckSidechain{0.40f};
+    std::atomic<float> neuralCrossDeckSidechain{0.45f};
     std::atomic<float> neuralSubBassBoom{0.30f};
     std::atomic<float> neuralAirExciter{0.30f};
-    std::atomic<float> neuralBassCarryBridgeGain{0.0f}; // Carries extracted sub-bass across transitions
-    std::atomic<int> neuralMorphStyle{static_cast<int>(NeuralMorphStyle::BASS_CARRY_AND_SWAP)};
+    std::atomic<int> neuralMorphStyle{static_cast<int>(NeuralMorphStyle::INVISIBLE_GHOST_MORPH)};
     std::atomic<bool> neuralAutoHarmonicKeyLock{true};
-    std::atomic<int> verifiedNeuralBankCount{16};
+    std::atomic<bool> neuralBeatGridLockEnabled{true};
+    std::atomic<int> verifiedNeuralBankCount{20};
 
     std::atomic<int> beatFxType{static_cast<int>(BeatFxType::NONE)};
     std::atomic<float> beatFxWetDry{0.0f};
@@ -429,7 +432,7 @@ public:
     std::atomic<bool> morphActive{false};
     std::atomic<float> morphProgressState{0.0f};
     double morphElapsedSamples = 0.0;
-    double morphTotalSamples = 48000.0 * 12.0;
+    double morphTotalSamples = 48000.0 * 14.0;
     int morphSourceDeck = 0;
     int morphTargetDeck = 1;
 
@@ -446,7 +449,6 @@ private:
     std::vector<double> mDelayLineR;
     size_t mDelayWritePos = 0;
 
-    // Master WAV Recorder State
     std::mutex mRecorderMutex;
     std::ofstream mRecordFile;
     std::atomic<bool> mIsRecording{false};
@@ -457,7 +459,7 @@ private:
     void writeWavHeader(uint32_t totalFrames);
     void processChannelStrip64(FlagshipChannelStrip& ch, double& outL, double& outR);
     void processMasterBeatFx64(double& masterL, double& masterR);
-    void updateButterMorphAutomation(int numFrames);
+    void updateInvisibleGhostMorphAutomation(int numFrames);
 };
 
 } // namespace apexdj

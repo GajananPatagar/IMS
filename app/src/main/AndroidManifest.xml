@@ -11,7 +11,7 @@
     <application
         android:allowBackup="true"
         android:largeHeap="true"
-        android:label="ApexDJ 1GB Club Pro"
+        android:label="ApexDJ 1.28GB GhostMix Pro"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">

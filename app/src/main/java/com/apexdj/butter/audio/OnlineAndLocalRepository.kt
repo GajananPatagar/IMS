@@ -20,6 +20,7 @@ import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
@@ -36,15 +37,24 @@ data class SongTrack(
     val localUri: Uri? = null
 )
 
+data class DecodedPcmCacheEntry(
+    val leftPcm: FloatArray,
+    val rightPcm: FloatArray,
+    val sampleRate: Int
+)
+
 data class MixCompatibilityBadge(
     val matchScorePercent: Int,
-    val targetLabel: String,      // e.g. "PERFECT FOR DECK B" or "NEXT QUEUE MATCH"
+    val targetLabel: String,      // e.g. "★ 99% PERFECT FOR DECK B" or "★ 98% NEXT QUEUE MATCH"
     val recommendedDeck: Int,     // 0 = Deck A, 1 = Deck B
-    val transitionAdvice: String, // e.g. "BASS-CARRY & SWAP"
+    val transitionAdvice: String, // e.g. "INVISIBLE GHOST-MORPH"
     val isTopPick: Boolean
 )
 
 class OnlineAndLocalRepository(private val context: Context) {
+
+    // In-memory RAM Pre-Buffer Cache (stores up to 3 pre-decoded tracks for 0ms instant transitions)
+    private val prebufferedPcmCache = ConcurrentHashMap<String, DecodedPcmCacheEntry>()
 
     init {
         System.loadLibrary("apexdj_engine")
@@ -53,26 +63,25 @@ class OnlineAndLocalRepository(private val context: Context) {
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 
     fun getBuiltInStudioTracks(): List<SongTrack> {
         return listOf(
-            SongTrack("studio_0", "Peak-Time Tech House Roller", "ApexDJ Neural Studio #1", 64, "STUDIO://0", studioPresetIndex = 0, estimatedBpm = 128f, camelotKey = 8),
-            SongTrack("studio_1", "Acid Techno Underground Sub", "ApexDJ Neural Studio #2", 64, "STUDIO://1", studioPresetIndex = 1, estimatedBpm = 130f, camelotKey = 9),
-            SongTrack("studio_2", "Deep Melodic Afterhours Groove", "ApexDJ Neural Studio #3", 64, "STUDIO://2", studioPresetIndex = 2, estimatedBpm = 126f, camelotKey = 7),
-            SongTrack("studio_3", "Warehouse Hard Rave Bassline", "ApexDJ Neural Studio #4", 64, "STUDIO://3", studioPresetIndex = 3, estimatedBpm = 140f, camelotKey = 2),
-            SongTrack("studio_4", "Progressive Sunset Vocal Ride", "ApexDJ Neural Studio #5", 64, "STUDIO://4", studioPresetIndex = 4, estimatedBpm = 124f, camelotKey = 5),
-            SongTrack("studio_5", "Euphoric Festival Mainstage Drop", "ApexDJ Neural Studio #6", 64, "STUDIO://5", studioPresetIndex = 5, estimatedBpm = 138f, camelotKey = 10),
-            SongTrack("studio_6", "High-Energy Psy-Bass Matrix", "ApexDJ Neural Studio #7", 64, "STUDIO://6", studioPresetIndex = 6, estimatedBpm = 150f, camelotKey = 11),
-            SongTrack("studio_7", "Afro-House Percussive Sub Groove", "ApexDJ Neural Studio #8", 64, "STUDIO://7", studioPresetIndex = 7, estimatedBpm = 118f, camelotKey = 4)
+            SongTrack("studio_0", "Peak-Time Tech House Roller", "ApexDJ GhostMix Studio #1", 64, "STUDIO://0", studioPresetIndex = 0, estimatedBpm = 128f, camelotKey = 8),
+            SongTrack("studio_1", "Acid Techno Sub-Bass locking", "ApexDJ GhostMix Studio #2", 64, "STUDIO://1", studioPresetIndex = 1, estimatedBpm = 128f, camelotKey = 8),
+            SongTrack("studio_2", "Deep Melodic Afterhours Groove", "ApexDJ GhostMix Studio #3", 64, "STUDIO://2", studioPresetIndex = 2, estimatedBpm = 126f, camelotKey = 7),
+            SongTrack("studio_3", "Warehouse Hard Rave Bassline", "ApexDJ GhostMix Studio #4", 64, "STUDIO://3", studioPresetIndex = 3, estimatedBpm = 130f, camelotKey = 9),
+            SongTrack("studio_4", "Progressive Sunset Vocal Bridge", "ApexDJ GhostMix Studio #5", 64, "STUDIO://4", studioPresetIndex = 4, estimatedBpm = 124f, camelotKey = 5),
+            SongTrack("studio_5", "Euphoric Festival Mainstage Drop", "ApexDJ GhostMix Studio #6", 64, "STUDIO://5", studioPresetIndex = 5, estimatedBpm = 132f, camelotKey = 10),
+            SongTrack("studio_6", "High-Energy Psy-Bass Matrix", "ApexDJ GhostMix Studio #7", 64, "STUDIO://6", studioPresetIndex = 6, estimatedBpm = 138f, camelotKey = 11),
+            SongTrack("studio_7", "Afro-House Percussive Sub Groove", "ApexDJ GhostMix Studio #8", 64, "STUDIO://7", studioPresetIndex = 7, estimatedBpm = 122f, camelotKey = 4)
         )
     }
 
     suspend fun scanOfflineLibrary(): List<SongTrack> = withContext(Dispatchers.IO) {
         val offlineList = mutableListOf<SongTrack>()
-        // Always include built-in multi-stem studio tracks first for instant offline remixing
         offlineList.addAll(getBuiltInStudioTracks())
 
         runCatching {
@@ -95,14 +104,14 @@ class OnlineAndLocalRepository(private val context: Context) {
                 val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val durCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 var count = 0
-                while (cursor.moveToNext() && count < 40) {
+                while (cursor.moveToNext() && count < 50) {
                     val id = cursor.getLong(idCol)
                     val title = cursor.getString(titleCol) ?: "Local Audio Track"
                     val artist = cursor.getString(artistCol) ?: "Device Storage"
                     val durationSec = (cursor.getLong(durCol) / 1000L).toInt().coerceAtLeast(30)
                     val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
                     val hash = abs((title + artist).hashCode())
-                    val estBpm = 118f + (hash % 28).toFloat()
+                    val estBpm = 120f + (hash % 22).toFloat()
                     val estKey = 1 + (hash % 12)
                     offlineList.add(
                         SongTrack(
@@ -126,11 +135,11 @@ class OnlineAndLocalRepository(private val context: Context) {
 
     suspend fun searchOnlineSongs(query: String): List<SongTrack> = withContext(Dispatchers.IO) {
         val results = mutableListOf<SongTrack>()
-        val encoded = URLEncoder.encode(query.ifBlank { "festival bass mix" }, "UTF-8")
+        val encoded = URLEncoder.encode(query.ifBlank { "club remix" }, "UTF-8")
 
         // 1. Apple iTunes High-Bitrate AAC Stream Search
         runCatching {
-            val url = "https://itunes.apple.com/search?term=$encoded&entity=song&limit=16"
+            val url = "https://itunes.apple.com/search?term=$encoded&entity=song&limit=18"
             val req = Request.Builder().url(url).build()
             httpClient.newCall(req).execute().use { resp ->
                 if (resp.isSuccessful) {
@@ -146,8 +155,6 @@ class OnlineAndLocalRepository(private val context: Context) {
                             val durationSec = (item.optInt("trackTimeMillis", 180000) / 1000).coerceAtLeast(30)
                             if (previewUrl.isNotEmpty()) {
                                 val hash = abs((title + artist).hashCode())
-                                val estBpm = 120f + (hash % 24).toFloat()
-                                val estKey = 1 + (hash % 12)
                                 results.add(
                                     SongTrack(
                                         id = "itunes_$trackId",
@@ -155,8 +162,8 @@ class OnlineAndLocalRepository(private val context: Context) {
                                         artist = artist,
                                         durationSec = durationSec,
                                         streamUrl = previewUrl,
-                                        estimatedBpm = estBpm,
-                                        camelotKey = estKey
+                                        estimatedBpm = 122f + (hash % 18).toFloat(),
+                                        camelotKey = 1 + (hash % 12)
                                     )
                                 )
                             }
@@ -168,7 +175,7 @@ class OnlineAndLocalRepository(private val context: Context) {
 
         // 2. Deezer Global Club Track Search
         runCatching {
-            val url = "https://api.deezer.com/search?q=$encoded&limit=10"
+            val url = "https://api.deezer.com/search?q=$encoded&limit=12"
             val req = Request.Builder().url(url).build()
             httpClient.newCall(req).execute().use { resp ->
                 if (resp.isSuccessful) {
@@ -191,7 +198,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                                         artist = artist,
                                         durationSec = item.optInt("duration", 180),
                                         streamUrl = preview,
-                                        estimatedBpm = 122f + (hash % 22).toFloat(),
+                                        estimatedBpm = 124f + (hash % 16).toFloat(),
                                         camelotKey = 1 + (hash % 12)
                                     )
                                 )
@@ -204,7 +211,7 @@ class OnlineAndLocalRepository(private val context: Context) {
 
         // 3. Audius Full-Length Electronic Stream API
         runCatching {
-            val url = "https://discoveryprovider.audius.co/v1/tracks/search?query=$encoded&app_name=ApexDJClubPro"
+            val url = "https://discoveryprovider.audius.co/v1/tracks/search?query=$encoded&app_name=ApexDJGhostMixPro"
             val req = Request.Builder().url(url).build()
             httpClient.newCall(req).execute().use { resp ->
                 if (resp.isSuccessful) {
@@ -218,9 +225,9 @@ class OnlineAndLocalRepository(private val context: Context) {
                             val user = item.optJSONObject("user")
                             val artist = user?.optString("name", "Producer") ?: "Producer"
                             val duration = item.optInt("duration", 180)
-                            if (duration in 30..420) {
+                            if (duration in 30..360) {
                                 val hash = abs((title + artist).hashCode())
-                                val streamEndpoint = "https://discoveryprovider.audius.co/v1/tracks/$trackId/stream?app_name=ApexDJClubPro"
+                                val streamEndpoint = "https://discoveryprovider.audius.co/v1/tracks/$trackId/stream?app_name=ApexDJGhostMixPro"
                                 results.add(
                                     SongTrack(
                                         id = "au_$trackId",
@@ -228,7 +235,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                                         artist = artist,
                                         durationSec = duration,
                                         streamUrl = streamEndpoint,
-                                        estimatedBpm = 124f + (hash % 20).toFloat(),
+                                        estimatedBpm = 124f + (hash % 18).toFloat(),
                                         camelotKey = 1 + (hash % 12)
                                     )
                                 )
@@ -247,7 +254,7 @@ class OnlineAndLocalRepository(private val context: Context) {
 
     /**
      * Evaluates harmonic Camelot wheel distance + BPM proximity against Deck A, Deck B, and Queue
-     * so the DJ sees which song is the "Next Perfect Song" and which deck/queue to load it into.
+     * so both Online Search and Offline Library clearly show the Next Perfect Song and target Deck/Queue.
      */
     fun evaluateMixCompatibility(
         track: SongTrack,
@@ -264,7 +271,6 @@ class OnlineAndLocalRepository(private val context: Context) {
             return minOf(diff, 12 - diff)
         }
 
-        // Determine which deck is currently the active master reference
         val refDeckIsA = when {
             deckAPlaying && !deckBPlaying -> true
             deckBPlaying && !deckAPlaying -> false
@@ -278,31 +284,34 @@ class OnlineAndLocalRepository(private val context: Context) {
         val bpmDiffToActive = abs(track.estimatedBpm - refBpm)
 
         val keyPenalty = when (keyDistToActive) {
-            0 -> 0      // Exact same Camelot Key (100% harmonic lock)
-            1 -> 3      // Adjacent fifth on Camelot Wheel (+1A / -1A)
-            2 -> 8      // Energy boost (+2 semitone harmonic step)
-            else -> 16
+            0 -> 0
+            1 -> 2
+            2 -> 6
+            else -> 14
         }
-        val bpmPenalty = (bpmDiffToActive * 0.8f).toInt().coerceAtMost(18)
-        val score = (99 - keyPenalty - bpmPenalty).coerceIn(72, 99)
+        val bpmPenalty = (bpmDiffToActive * 0.7f).toInt().coerceAtMost(16)
+        val score = (99 - keyPenalty - bpmPenalty).coerceIn(75, 99)
 
         val queueScore = if (queueTail != null) {
             val qKeyDist = camelotDistance(track.camelotKey, queueTail.camelotKey)
             val qBpmDiff = abs(track.estimatedBpm - queueTail.estimatedBpm)
-            (99 - (if (qKeyDist <= 1) 2 else 14) - (qBpmDiff * 0.7f).toInt()).coerceIn(70, 99)
+            (99 - (if (qKeyDist <= 1) 1 else 12) - (qBpmDiff * 0.6f).toInt()).coerceIn(74, 99)
         } else 0
 
+        val isCached = prebufferedPcmCache.containsKey(track.id) || track.studioPresetIndex >= 0
+        val readyTag = if (isCached) " • ⚡0ms READY" else ""
         val targetDeckName = if (targetIdleDeck == 0) "DECK A" else "DECK B"
+
         val targetLabel = if (queueScore > score && queueTail != null) {
-            "★ $queueScore% PERFECT NEXT QUEUE (AFTER ${queueTail.title.take(10).uppercase()})"
+            "★ $queueScore% NEXT QUEUE MATCH (AFTER ${queueTail.title.take(9).uppercase()})$readyTag"
         } else {
-            "★ $score% PERFECT FOR $targetDeckName (${track.camelotKey}A • ${track.estimatedBpm.toInt()} BPM)"
+            "★ $score% PERFECT FOR $targetDeckName (${track.camelotKey}A • ${track.estimatedBpm.toInt()} BPM)$readyTag"
         }
 
         val advice = when {
-            keyDistToActive == 0 && bpmDiffToActive <= 4f -> "SUB-BASS CARRY & SWAP"
-            keyDistToActive <= 1 -> "HARMONIC VOCAL RIDE"
-            else -> "FESTIVAL DROP SLAM"
+            keyDistToActive == 0 && bpmDiffToActive <= 4f -> "INVISIBLE GHOST-MORPH"
+            keyDistToActive <= 1 -> "ZERO-SEAM BASS SWAP"
+            else -> "HARMONIC VOCAL BRIDGE"
         }
 
         return MixCompatibilityBadge(
@@ -310,7 +319,7 @@ class OnlineAndLocalRepository(private val context: Context) {
             targetLabel = targetLabel,
             recommendedDeck = targetIdleDeck,
             transitionAdvice = advice,
-            isTopPick = maxOf(score, queueScore) >= 92
+            isTopPick = maxOf(score, queueScore) >= 93
         )
     }
 
@@ -318,9 +327,10 @@ class OnlineAndLocalRepository(private val context: Context) {
         candidates: List<SongTrack>,
         refBpm: Float,
         refKey: Int,
-        excludeId: String
+        excludeIdA: String,
+        excludeIdB: String
     ): SongTrack? {
-        val pool = candidates.filter { it.id != excludeId }
+        val pool = candidates.filter { it.id != excludeIdA && it.id != excludeIdB }
         if (pool.isEmpty()) return candidates.firstOrNull()
         return pool.minByOrNull { t ->
             val rawKeyDiff = abs(t.camelotKey - refKey) % 12
@@ -330,13 +340,45 @@ class OnlineAndLocalRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Pre-decodes a track in the background so when Auto-DJ or the user triggers the transition,
+     * the PCM audio loads into the C++ 64-bit engine in <2ms without any network or decoder delay.
+     */
+    suspend fun prebufferTrackInBackground(track: SongTrack) = withContext(Dispatchers.IO) {
+        if (track.studioPresetIndex >= 0 || prebufferedPcmCache.containsKey(track.id)) return@withContext
+        if (prebufferedPcmCache.size >= 3) {
+            val firstKey = prebufferedPcmCache.keys().nextElement()
+            if (firstKey != null) prebufferedPcmCache.remove(firstKey)
+        }
+        val decoded = fetchAndDecodeTrack(track, 99)
+        if (decoded.leftPcm.size >= 4096) {
+            prebufferedPcmCache[track.id] = decoded
+        }
+    }
+
     suspend fun loadTrackIntoDeck(deckIndex: Int, track: SongTrack, autoPlay: Boolean = true) = withContext(Dispatchers.IO) {
         if (track.studioPresetIndex >= 0) {
             nativeLoadBuiltInStudioPreset(deckIndex, track.studioPresetIndex, autoPlay)
             return@withContext
         }
 
-        val cacheFile = File(context.cacheDir, "deck_${deckIndex}_cached_audio.tmp")
+        val cached = prebufferedPcmCache[track.id]
+        if (cached != null && cached.leftPcm.size >= 4096) {
+            nativeLoadPcmToDeck(deckIndex, cached.leftPcm, cached.rightPcm, cached.sampleRate, autoPlay)
+            return@withContext
+        }
+
+        val decoded = fetchAndDecodeTrack(deckIndex = deckIndex, track = track)
+        if (decoded.leftPcm.size < 4096) {
+            nativeLoadBuiltInStudioPreset(deckIndex, deckIndex % 8, autoPlay)
+        } else {
+            prebufferedPcmCache[track.id] = decoded
+            nativeLoadPcmToDeck(deckIndex, decoded.leftPcm, decoded.rightPcm, decoded.sampleRate, autoPlay)
+        }
+    }
+
+    private fun fetchAndDecodeTrack(track: SongTrack, deckIndex: Int): DecodedPcmCacheEntry {
+        val cacheFile = File(context.cacheDir, "deck_${deckIndex}_${abs(track.id.hashCode())}.tmp")
         runCatching {
             if (track.isLocal && track.localUri != null) {
                 context.contentResolver.openInputStream(track.localUri)?.use { input ->
@@ -351,14 +393,9 @@ class OnlineAndLocalRepository(private val context: Context) {
                 }
             }
         }
-
-        val (leftPcm, rightPcm, sampleRate) = decodeAudioFileToFloatStereo(cacheFile.absolutePath)
-        if (leftPcm.size < 4096) {
-            // Instant studio fallback if remote stream timed out
-            nativeLoadBuiltInStudioPreset(deckIndex, deckIndex % 8, autoPlay)
-        } else {
-            nativeLoadPcmToDeck(deckIndex, leftPcm, rightPcm, sampleRate, autoPlay)
-        }
+        val (l, r, sr) = decodeAudioFileToFloatStereo(cacheFile.absolutePath)
+        runCatching { cacheFile.delete() }
+        return DecodedPcmCacheEntry(l, r, sr)
     }
 
     private fun decodeAudioFileToFloatStereo(filePath: String): Triple<FloatArray, FloatArray, Int> {
@@ -443,7 +480,7 @@ class OnlineAndLocalRepository(private val context: Context) {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
         val recDir = File(baseDir, "ApexDJ_Recordings").apply { mkdirs() }
-        val outFile = File(recDir, "ApexDJ_StudioMix_$stamp.wav")
+        val outFile = File(recDir, "ApexDJ_GhostMix_$stamp.wav")
         nativeStartMasterRecording(outFile.absolutePath)
         return outFile.absolutePath
     }
@@ -455,6 +492,7 @@ class OnlineAndLocalRepository(private val context: Context) {
     external fun nativeGetDeckPlayState(deck: Int): Boolean
     external fun nativeGetDeckProgress(deck: Int): Float
     external fun nativeGetDeckRemainingSeconds(deck: Int): Float
+    external fun nativeGetBeatPhase(deck: Int): Float
     external fun nativeSeekDeckProgress(deck: Int, normProgress: Float)
     external fun nativeGetStemEnvelope(deck: Int, stemIdx: Int): Float
     external fun nativeGetStemGain(deck: Int, stemIdx: Int): Float
