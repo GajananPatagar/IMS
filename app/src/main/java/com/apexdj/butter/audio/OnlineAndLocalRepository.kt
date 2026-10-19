@@ -323,6 +323,8 @@ class OnlineAndLocalRepository(private val context: Context) {
             "★ $queueScore% NEXT QUEUE MATCH (AFTER ${queueTail.title.take(10).uppercase()})$readyTag"
         } else {
             "★ $score% PERFECT FOR $targetDeckName (${track.camelotKey}A • ${track.estimatedBpm.toInt()} BPM)$readyTag"
+        }else {
+            "★ $score% PERFECT FOR $targetDeckName (${track.camelotKey}A • ${track.estimatedBpm.toInt()} BPM)$readyTag"
         }
 
         val advice = when {
