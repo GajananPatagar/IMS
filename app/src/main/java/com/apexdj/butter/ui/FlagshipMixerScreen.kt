@@ -588,8 +588,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                         .height(102.dp)
                         .background(Color(0xFF05070B), RoundedCornerShape(6.dp))
                         .padding(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     items(rankedPairs) { (song, badge) ->
                         Row(
