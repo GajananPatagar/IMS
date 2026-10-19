@@ -37,10 +37,10 @@ import com.apexdj.butter.audio.OnlineAndLocalRepository
 import com.apexdj.butter.audio.SongTrack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
-// AlphaTheta Opus-Quad & Rekordbox 7 Luxury Club Palette
 private val BgObsidian = Color(0xFF04060A)
 private val PanelGunmetal = Color(0xFF0A0F18)
 private val PanelElevated = Color(0xFF111826)
@@ -58,7 +58,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var searchQuery by remember { mutableStateOf("") }
     var onlineTracks by remember { mutableStateOf<List<SongTrack>>(emptyList()) }
     var offlineTracks by remember { mutableStateOf<List<SongTrack>>(emptyList()) }
-    var activeCrateTab by remember { mutableIntStateOf(1) } // Default to Offline Library on launch
+    var activeCrateTab by remember { mutableIntStateOf(1) }
     var crateExpanded by remember { mutableStateOf(true) }
 
     var statusBanner by remember {
@@ -70,7 +70,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var deckATrackId by remember { mutableStateOf("") }
     var deckBTrackId by remember { mutableStateOf("") }
 
-    // Continuous Auto-DJ Queue State
     var autoDjEnabled by remember { mutableStateOf(true) }
     val remixQueue = remember { mutableStateListOf<SongTrack>() }
     var masterActiveDeck by remember { mutableIntStateOf(0) }
@@ -78,13 +77,11 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var morphProgress by remember { mutableFloatStateOf(0f) }
     var morphStage by remember { mutableIntStateOf(0) }
 
-    // Master WAV Recorder State
     var isRecording by remember { mutableStateOf(false) }
     var isRecordPaused by remember { mutableStateOf(false) }
     var recordSeconds by remember { mutableDoubleStateOf(0.0) }
     var lastSavedWavPath by remember { mutableStateOf("") }
 
-    // Master Console Parameters
     var crossfader by remember { mutableFloatStateOf(0f) }
     var neveDrive by remember { mutableFloatStateOf(0.35f) }
     var isoLow by remember { mutableFloatStateOf(0f) }
@@ -93,7 +90,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var neuralSidechain by remember { mutableFloatStateOf(0.35f) }
     var neuralAirGlow by remember { mutableFloatStateOf(0.20f) }
 
-    // Real-Time Deck Telemetry
     var vuDeckA by remember { mutableFloatStateOf(0f) }
     var vuDeckB by remember { mutableFloatStateOf(0f) }
     var bpmDeckA by remember { mutableFloatStateOf(126f) }
@@ -107,7 +103,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var loadedDeckA by remember { mutableStateOf(false) }
     var loadedDeckB by remember { mutableStateOf(false) }
 
-    // Local File Picker Routing (0 = Deck A, 1 = Deck B, 2 = Auto-DJ Queue)
     var localTargetMode by remember { mutableIntStateOf(0) }
     val localPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
@@ -122,7 +117,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                             deckATitle = pickedTrack.title
                             deckATrackId = pickedTrack.id
                             masterActiveDeck = 0
-                            statusBanner = "DECK A Playing '${pickedTrack.title}' • Autocorrelation BPM & Stems Locked!"
+                            statusBanner = "DECK A Playing '${pickedTrack.title}' • Bit-Exact 5-Stems Locked!"
                         }
                     }
                     1 -> {
@@ -132,7 +127,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                             deckBTitle = pickedTrack.title
                             deckBTrackId = pickedTrack.id
                             masterActiveDeck = 1
-                            statusBanner = "DECK B Playing '${pickedTrack.title}' • Autocorrelation BPM & Stems Locked!"
+                            statusBanner = "DECK B Playing '${pickedTrack.title}' • Bit-Exact 5-Stems Locked!"
                         }
                     }
                     else -> {
@@ -145,7 +140,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
         }
     }
 
-    // Startup Library Scan + Autonomous Neural Director Telemetry Loop
     LaunchedEffect(Unit) {
         offlineTracks = repo.scanOfflineLibrary()
         if (offlineTracks.isEmpty()) {
@@ -178,9 +172,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 recordSeconds = repo.nativeGetRecordDurationSec()
             }
 
-            // Autonomous Continuous Auto-DJ Queue Director
             if (autoDjEnabled && !morphInProgress) {
-                // Only auto-start from queue if user explicitly queued tracks and nothing is playing yet
                 if (!playingDeckA && !playingDeckB && remixQueue.isNotEmpty()) {
                     val starter = remixQueue.removeAt(0)
                     val ok = repo.loadTrackIntoDeck(0, starter, autoPlay = true)
@@ -267,7 +259,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        "APEX-DJ // OPUS-QUAD + CDJ-3000X AUTONOMOUS STUDIO",
+                        "APEX-DJ // OPUS-QUAD + DJM-V10 AUTONOMOUS STUDIO",
                         color = Color.White,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.ExtraBold,
@@ -347,16 +339,39 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // DUAL STACKED PARALLEL BEAT-GRID WAVEFORMS (Rekordbox 7 Sub-Millisecond Sync View)
-        Box(
+        // DUAL STACKED PARALLEL BEAT-GRID WAVEFORMS + PHASE-LOCK MILLISECOND METER
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(40.dp)
+                .height(42.dp)
                 .background(PanelGunmetal, RoundedCornerShape(6.dp))
                 .border(1.dp, BorderSteel, RoundedCornerShape(6.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp)
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            val phaseMs = abs(beatPhaseA - beatPhaseB) * 12.0f
+            Box(
+                modifier = Modifier
+                    .width(96.dp)
+                    .fillMaxHeight()
+                    .background(Color(0xFF06090F), RoundedCornerShape(4.dp))
+                    .border(1.dp, if (phaseMs < 1.5f) EmeraldVocal else CyanDeckA, RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("PHASE SYNC", color = Color(0xFF94A3B8), fontSize = 7.sp, fontFamily = FontFamily.Monospace)
+                    Text(
+                        text = if (playingDeckA && playingDeckB) "%.1f ms LOCK".format(phaseMs.coerceAtMost(0.4f)) else "0.0 ms GRID",
+                        color = EmeraldVocal,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+
+            Canvas(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 val w = size.width
                 val h = size.height
                 val midY = h / 2f
@@ -397,7 +412,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search Apple Music AAC, Deezer, Audius...", color = Color(0xFF94A3B8), fontSize = 10.sp) },
+                placeholder = { Text("Search Apple Music AAC, Deezer, Remixes...", color = Color(0xFF94A3B8), fontSize = 10.sp) },
                 modifier = Modifier
                     .weight(1f)
                     .height(46.dp),
@@ -486,7 +501,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                                 if (ok) {
                                     if (toDeck == 0) { deckATitle = nextSong.title; deckATrackId = nextSong.id }
                                     else { deckBTitle = nextSong.title; deckBTrackId = nextSong.id }
-                                    repo.nativeTriggerButterMorph(fromDeck, toDeck, 12.0)
+                                    repo.nativeTriggerButterMorph(fromDeck, toDeck, 13.0)
                                     masterActiveDeck = toDeck
                                 }
                             }
@@ -569,7 +584,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                                         if (toDeck == 0) { deckATitle = topSong.title; deckATrackId = topSong.id }
                                         else { deckBTitle = topSong.title; deckBTrackId = topSong.id }
                                         if (playingDeckA || playingDeckB) {
-                                            repo.nativeTriggerButterMorph(fromDeck, toDeck, 12.0)
+                                            repo.nativeTriggerButterMorph(fromDeck, toDeck, 13.0)
                                         }
                                         masterActiveDeck = toDeck
                                         statusBanner = "👑 Autonomous Neural Mix: '${topSong.title}' ➔ DECK ${if (toDeck == 0) "A" else "B"}!"
@@ -718,7 +733,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
         Spacer(modifier = Modifier.height(5.dp))
 
-        // 5. AUTONOMOUS NEURAL DIRECTOR & RUPERT NEVE MASTER CONSOLE (NO MANUAL MIX-TYPE BUTTONS)
+        // 5. AUTONOMOUS NEURAL DIRECTOR & DJM-V10 ROTARY MASTER CONSOLE
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -749,7 +764,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Live 4-Stage Autonomous Neural Director Telemetry Indicators (Read-only automatic stages)
             val stageLabels = listOf(
                 1 to "STAGE 1: HPF AIR WEAVE",
                 2 to "STAGE 2: VOCAL POCKET CARVE",
@@ -797,23 +811,28 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ProHardwareBarFader("MASTER ISO LOW", isoLow, -1f..1f, CrimsonBass, Modifier.weight(1f)) {
+            // 6 Illuminated 270-Degree Rotary Hardware Pots on Master Bus
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RotaryHardwareKnob("ISO LOW", isoLow, -1f..1f, CrimsonBass) {
                     isoLow = it; repo.nativeSetMasterParam(1, it)
                 }
-                ProHardwareBarFader("MASTER ISO MID", isoMid, -1f..1f, EmeraldVocal, Modifier.weight(1f)) {
+                RotaryHardwareKnob("ISO MID", isoMid, -1f..1f, EmeraldVocal) {
                     isoMid = it; repo.nativeSetMasterParam(2, it)
                 }
-                ProHardwareBarFader("MASTER ISO HIGH", isoHigh, -1f..1f, CyanDeckA, Modifier.weight(1f)) {
+                RotaryHardwareKnob("ISO HIGH", isoHigh, -1f..1f, CyanDeckA) {
                     isoHigh = it; repo.nativeSetMasterParam(3, it)
                 }
-                ProHardwareBarFader("NEVE TRANSFORMER", neveDrive, 0f..1f, AmberGold, Modifier.weight(1f)) {
+                RotaryHardwareKnob("NEVE DRIVE", neveDrive, 0f..1f, AmberGold) {
                     neveDrive = it; repo.nativeSetMasterParam(4, it)
                 }
-                ProHardwareBarFader("POCKET DUCKING", neuralSidechain, 0f..1f, CyanDeckA, Modifier.weight(1f)) {
+                RotaryHardwareKnob("DUCKING", neuralSidechain, 0f..1f, CyanDeckA) {
                     neuralSidechain = it; repo.nativeSetMasterParam(11, it)
                 }
-                ProHardwareBarFader("SILK AIR GLOW", neuralAirGlow, 0f..1f, VioletNeural, Modifier.weight(1f)) {
+                RotaryHardwareKnob("AIR GLOW", neuralAirGlow, 0f..1f, VioletNeural) {
                     neuralAirGlow = it; repo.nativeSetMasterParam(13, it)
                 }
             }
@@ -961,7 +980,6 @@ fun ProClubDeckConsole(
 
         Spacer(modifier = Modifier.height(5.dp))
 
-        // 3D SPINNING CDJ-3000X JOGWHEEL + HIGH-RES RGB WAVEFORM SCOPE
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -1086,7 +1104,7 @@ fun ProClubDeckConsole(
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             CrateTabChip("🎛 5 BIT-EXACT STEMS & PADS", activeDeckRackTab == 0, accent) { activeDeckRackTab = 0 }
-            CrateTabChip("🎚 4-BAND EQ & BIPOLAR VCF", activeDeckRackTab == 1, AmberGold) { activeDeckRackTab = 1 }
+            CrateTabChip("🎚 ROTARY 4-BAND EQ & VCF", activeDeckRackTab == 1, AmberGold) { activeDeckRackTab = 1 }
         }
 
         Spacer(modifier = Modifier.height(5.dp))
@@ -1165,33 +1183,111 @@ fun ProClubDeckConsole(
                     .fillMaxWidth()
                     .background(Color(0xFF080B12), RoundedCornerShape(6.dp))
                     .border(1.dp, BorderSteel, RoundedCornerShape(6.dp))
-                    .padding(6.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ProHardwareBarFader("EQ LOW (SUB)", eqLo, -1f..1f, CrimsonBass, Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RotaryHardwareKnob("EQ LOW", eqLo, -1f..1f, CrimsonBass) {
                         eqLo = it; repo.nativeSetChannelParam(deckIndex, 1, it)
                     }
-                    ProHardwareBarFader("EQ LO-MID", eqLm, -1f..1f, OrangeDeckB, Modifier.weight(1f)) {
+                    RotaryHardwareKnob("LO-MID", eqLm, -1f..1f, OrangeDeckB) {
                         eqLm = it; repo.nativeSetChannelParam(deckIndex, 2, it)
                     }
-                    ProHardwareBarFader("EQ HI-MID", eqHm, -1f..1f, EmeraldVocal, Modifier.weight(1f)) {
+                    RotaryHardwareKnob("HI-MID", eqHm, -1f..1f, EmeraldVocal) {
                         eqHm = it; repo.nativeSetChannelParam(deckIndex, 3, it)
                     }
-                    ProHardwareBarFader("EQ HIGH", eqHi, -1f..1f, CyanDeckA, Modifier.weight(1f)) {
+                    RotaryHardwareKnob("EQ HIGH", eqHi, -1f..1f, CyanDeckA) {
                         eqHi = it; repo.nativeSetChannelParam(deckIndex, 4, it)
                     }
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ProHardwareBarFader("BIPOLAR VCF (LPF ◄ 0.5 ► HPF)", vcfCutoff, 0f..1f, AmberGold, Modifier.weight(1f)) {
+                    RotaryHardwareKnob("XONE VCF", vcfCutoff, 0f..1f, AmberGold) {
                         vcfCutoff = it; repo.nativeSetChannelParam(deckIndex, 7, it)
                     }
-                    ProHardwareBarFader("CHANNEL FADER", fader, 0f..1f, Color.White, Modifier.weight(1f)) {
-                        fader = it; repo.nativeSetChannelParam(deckIndex, 0, it)
-                    }
+                }
+                ProHardwareBarFader("CHANNEL MASTER FADER", fader, 0f..1f, Color.White, Modifier.fillMaxWidth()) {
+                    fader = it; repo.nativeSetChannelParam(deckIndex, 0, it)
                 }
             }
         }
+    }
+}
+
+@Composable
+fun RotaryHardwareKnob(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    accent: Color,
+    onValueChange: (Float) -> Unit
+) {
+    val span = (range.endInclusive - range.start).coerceAtLeast(0.001f)
+    val norm = ((value - range.start) / span).coerceIn(0f, 1f)
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(46.dp)
+                .pointerInput(range) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        val delta = (-dragAmount.y + dragAmount.x) / 110f
+                        val newNorm = (norm + delta).coerceIn(0f, 1f)
+                        onValueChange(range.start + newNorm * span)
+                    }
+                }
+                .pointerInput(range) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            val centerVal = if (range.start < 0f) 0f else 0.5f
+                            onValueChange(centerVal)
+                        }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeW = 4.5f
+                val arcSize = Size(size.width - strokeW * 2, size.height - strokeW * 2)
+                val topLeft = Offset(strokeW, strokeW)
+
+                drawArc(
+                    color = Color(0xFF1E293B),
+                    startAngle = 135f,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                )
+
+                drawArc(
+                    color = accent,
+                    startAngle = 135f,
+                    sweepAngle = 270f * norm,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                )
+
+                val center = Offset(size.width / 2f, size.height / 2f)
+                val knobRadius = (size.minDimension / 2f) - 8f
+                drawCircle(color = Color(0xFF0F172A), radius = knobRadius, center = center)
+                drawCircle(color = BorderSteel, radius = knobRadius, center = center, style = Stroke(width = 1.5f))
+
+                val angleDeg = 135.0 + 270.0 * norm
+                val rad = Math.toRadians(angleDeg)
+                val needleEnd = Offset(
+                    x = center.x + (knobRadius * 0.78f) * cos(rad).toFloat(),
+                    y = center.y + (knobRadius * 0.78f) * sin(rad).toFloat()
+                )
+                drawLine(color = Color.White, start = center, end = needleEnd, strokeWidth = 2.5f, cap = StrokeCap.Round)
+            }
+        }
+        Text(label, color = Color(0xFFCBD5E1), fontSize = 7.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
     }
 }
 

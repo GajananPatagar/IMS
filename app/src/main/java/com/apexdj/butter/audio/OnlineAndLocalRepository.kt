@@ -68,7 +68,7 @@ class OnlineAndLocalRepository(private val context: Context) {
 
     fun resolveLocalUriTrack(uri: Uri): SongTrack {
         var displayName = "Local Studio Audio"
-        runCatching {
+        try {
             context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val nameCol = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (nameCol >= 0 && cursor.moveToFirst()) {
@@ -78,7 +78,8 @@ class OnlineAndLocalRepository(private val context: Context) {
                     }
                 }
             }
-        }
+        } catch (_: Throwable) {}
+
         val hash = abs(displayName.hashCode())
         val estBpm = 120f + (hash % 18).toFloat()
         val estKey = 1 + (hash % 12)
@@ -97,7 +98,7 @@ class OnlineAndLocalRepository(private val context: Context) {
 
     suspend fun scanOfflineLibrary(): List<SongTrack> = withContext(Dispatchers.IO) {
         val offlineList = mutableListOf<SongTrack>()
-        runCatching {
+        try {
             val projection = arrayOf(
                 MediaStore.Audio.Media._ID,
                 MediaStore.Audio.Media.TITLE,
@@ -123,9 +124,17 @@ class OnlineAndLocalRepository(private val context: Context) {
                     val id = cursor.getLong(idCol)
                     val rawTitle = cursor.getString(titleCol)
                     val dispName = cursor.getString(dispCol)?.substringBeforeLast(".")
-                    val title = if (!rawTitle.isNullOrBlank() && rawTitle != "<unknown>") rawTitle else (dispName ?: "Track #$id")
+                    val title = if (!rawTitle.isNullOrBlank() && rawTitle != "<unknown>") {
+                        rawTitle
+                    } else {
+                        dispName ?: "Track #$id"
+                    }
                     val rawArtist = cursor.getString(artistCol)
-                    val artist = if (!rawArtist.isNullOrBlank() && rawArtist != "<unknown>") rawArtist else "Offline Audio"
+                    val artist = if (!rawArtist.isNullOrBlank() && rawArtist != "<unknown>") {
+                        rawArtist
+                    } else {
+                        "Offline Audio"
+                    }
                     val durationSec = (cursor.getLong(durCol) / 1000L).toInt().coerceAtLeast(15)
                     val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
                     val hash = abs((title + artist).hashCode())
@@ -147,7 +156,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                     count++
                 }
             }
-        }
+        } catch (_: Throwable) {}
         offlineList
     }
 
@@ -155,7 +164,7 @@ class OnlineAndLocalRepository(private val context: Context) {
         val results = mutableListOf<SongTrack>()
         val encoded = URLEncoder.encode(query.ifBlank { "Calvin Harris Tiesto Anyma" }, "UTF-8")
 
-        runCatching {
+        try {
             val url = "https://itunes.apple.com/search?term=$encoded&entity=song&limit=20"
             val req = Request.Builder().url(url).build()
             httpClient.newCall(req).execute().use { resp ->
@@ -188,9 +197,9 @@ class OnlineAndLocalRepository(private val context: Context) {
                     }
                 }
             }
-        }
+        } catch (_: Throwable) {}
 
-        runCatching {
+        try {
             val url = "https://api.deezer.com/search?q=$encoded&limit=14"
             val req = Request.Builder().url(url).build()
             httpClient.newCall(req).execute().use { resp ->
@@ -223,7 +232,8 @@ class OnlineAndLocalRepository(private val context: Context) {
                     }
                 }
             }
-        }
+        } catch (_: Throwable) {}
+
         results
     }
 
@@ -242,10 +252,12 @@ class OnlineAndLocalRepository(private val context: Context) {
             return minOf(diff, 12 - diff)
         }
 
-        val refDeckIsA = when {
-            deckAPlaying && !deckBPlaying -> true
-            deckBPlaying && !deckAPlaying -> false
-            else -> true
+        val refDeckIsA = if (deckAPlaying && !deckBPlaying) {
+            true
+        } else if (deckBPlaying && !deckAPlaying) {
+            false
+        } else {
+            true
         }
         val targetIdleDeck = if (refDeckIsA) 1 else 0
         val refBpm = if (refDeckIsA) deckABpm else deckBBpm
@@ -266,17 +278,19 @@ class OnlineAndLocalRepository(private val context: Context) {
         val queueScore = if (queueTail != null) {
             val qKeyDist = camelotDistance(track.camelotKey, queueTail.camelotKey)
             val qBpmDiff = abs(track.estimatedBpm - queueTail.estimatedBpm)
-            (99 - (if (qKeyDist <= 1) 1 else 12) - (qBpmDiff * 0.6f).toInt()).coerceIn(75, 99)
-        } else 0
+            val qPen = if (qKeyDist <= 1) 1 else 12
+            (99 - qPen - (qBpmDiff * 0.6f).toInt()).coerceIn(75, 99)
+        } else {
+            0
+        }
 
         val isCached = prebufferedPcmCache.containsKey(track.id)
         val readyTag = if (isCached) " • ⚡0ms RAM" else ""
         val targetDeckName = if (targetIdleDeck == 0) "DECK A" else "DECK B"
 
-        val targetLabel = if (queueScore > score && queueTail != null) {
-            "★ $queueScore% NEXT QUEUE MATCH (AFTER ${queueTail.title.take(10).uppercase()})$readyTag"
-        } else {
-            "★ $score% PERFECT FOR $targetDeckName (${track.camelotKey}A • ${track.estimatedBpm.toInt()} BPM)$readyTag"
+        var targetLabel = "★ $score% PERFECT FOR $targetDeckName (${track.camelotKey}A • ${track.estimatedBpm.toInt()} BPM)$readyTag"
+        if (queueScore > score && queueTail != null) {
+            targetLabel = "★ $queueScore% NEXT QUEUE MATCH (AFTER ${queueTail.title.take(10).uppercase()})$readyTag"
         }
 
         val advice = when {
@@ -285,12 +299,13 @@ class OnlineAndLocalRepository(private val context: Context) {
             else -> "AUTO VOCAL POCKET BLEND"
         }
 
+        val bestScore = maxOf(score, queueScore)
         return MixCompatibilityBadge(
-            matchScorePercent = maxOf(score, queueScore),
+            matchScorePercent = bestScore,
             targetLabel = targetLabel,
             recommendedDeck = targetIdleDeck,
             transitionAdvice = advice,
-            isTopPick = maxOf(score, queueScore) >= 93
+            isTopPick = bestScore >= 93
         )
     }
 
@@ -315,7 +330,9 @@ class OnlineAndLocalRepository(private val context: Context) {
         if (prebufferedPcmCache.containsKey(track.id)) return@withContext
         if (prebufferedPcmCache.size >= 4) {
             val firstKey = prebufferedPcmCache.keys().nextElement()
-            if (firstKey != null) prebufferedPcmCache.remove(firstKey)
+            if (firstKey != null) {
+                prebufferedPcmCache.remove(firstKey)
+            }
         }
         val decoded = fetchAndDecodeTrack(track, 99)
         if (decoded.leftPcm.size >= 4096) {
@@ -341,28 +358,37 @@ class OnlineAndLocalRepository(private val context: Context) {
 
     private fun fetchAndDecodeTrack(track: SongTrack, deckIndex: Int): DecodedPcmCacheEntry {
         val cacheFile = File(context.cacheDir, "deck_${deckIndex}_${abs(track.id.hashCode())}.tmp")
-        runCatching {
+        try {
             if (track.isLocal && track.localUri != null) {
                 context.contentResolver.openInputStream(track.localUri)?.use { input ->
-                    FileOutputStream(cacheFile).use { output -> input.copyTo(output) }
+                    FileOutputStream(cacheFile).use { output ->
+                        input.copyTo(output)
+                    }
                 }
             } else if (track.streamUrl.isNotEmpty()) {
                 val req = Request.Builder().url(track.streamUrl).build()
                 httpClient.newCall(req).execute().use { resp ->
                     resp.body?.byteStream()?.use { input ->
-                        FileOutputStream(cacheFile).use { output -> input.copyTo(output) }
+                        FileOutputStream(cacheFile).use { output ->
+                            input.copyTo(output)
+                        }
                     }
                 }
             }
-        }
+        } catch (_: Throwable) {}
+
         val (l, r, sr) = decodeAudioFileToFloatStereo(cacheFile.absolutePath)
-        runCatching { cacheFile.delete() }
+        try {
+            cacheFile.delete()
+        } catch (_: Throwable) {}
         return DecodedPcmCacheEntry(l, r, sr)
     }
 
     private fun decodeAudioFileToFloatStereo(filePath: String): Triple<FloatArray, FloatArray, Int> {
         val extractor = MediaExtractor()
-        runCatching { extractor.setDataSource(filePath) }.onFailure {
+        try {
+            extractor.setDataSource(filePath)
+        } catch (_: Throwable) {
             return Triple(FloatArray(0), FloatArray(0), 44100)
         }
 
