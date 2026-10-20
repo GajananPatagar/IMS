@@ -23,15 +23,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Vendor Signalsmith Stretch & Linear Dependencies
+      - name: Vendor Signalsmith Stretch & Direct STFT Header
         run: |
-          mkdir -p app/src/main/cpp/third_party/signalsmith-stretch
+          mkdir -p app/src/main/cpp/third_party/signalsmith-stretch/signalsmith-linear
           git clone --depth 1 https://github.com/Signalsmith-Audio/signalsmith-stretch.git /tmp/signalsmith
           cp -r /tmp/signalsmith/* app/src/main/cpp/third_party/signalsmith-stretch/
           
-          mkdir -p app/src/main/cpp/third_party/signalsmith-linear
-          git clone --depth 1 https://github.com/Signalsmith-Audio/linear.git /tmp/linear
-          cp -r /tmp/linear/* app/src/main/cpp/third_party/signalsmith-linear/
+          # Fetch stft.h directly into the required subdirectory
+          curl -L https://raw.githubusercontent.com/Signalsmith-Audio/linear/main/stft.h -o app/src/main/cpp/third_party/signalsmith-stretch/signalsmith-linear/stft.h
 
       - name: Build Neural Models & PUBG/FreeFire Style .OBB Expansion File
         run: |
@@ -56,7 +55,7 @@ jobs:
               filename = f"htdemucs_ft_{stem}.onnx"
               target_asset = os.path.join(assets_dir, filename)
               try:
-                  print(f"Fetching {repo_id}/{filename}[span_0](start_span)[span_0](end_span)...")
+                  print(f"Fetching {repo_id}/{filename}...")
                   p = hf_hub_download(repo_id=repo_id, filename=filename, local_dir=assets_dir)
                   with open(p, "rb") as src, open(os.path.join(obb_models, filename), "wb") as dst:
                       dst.write(src.read())
