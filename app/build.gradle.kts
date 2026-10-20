@@ -12,8 +12,8 @@ android {
         applicationId = "com.apexdj.butter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "7.0.0-1.28GB-AutonomousNeuralDirector"
+        versionCode = 1
+        versionName = "4.0.0-Gemini4-Argon-OBB-Edition"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -28,7 +28,7 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("nwt", "onnx", "ort", "wav", "flac", "bin")
+        noCompress += listOf("onnx", "ort", "obb", "wav", "flac")
     }
 
     signingConfigs {
@@ -37,9 +37,6 @@ android {
             storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "apexdj123"
             keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "apexdj"
             keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: "apexdj123"
-            enableV1Signing = false
-            enableV2Signing = true
-            enableV3Signing = true
         }
     }
 
@@ -77,6 +74,7 @@ android {
 
 dependencies {
     implementation("com.google.oboe:oboe:1.9.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 

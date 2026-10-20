@@ -2,29 +2,22 @@
 set -e
 
 echo "================================================================="
-echo " APEX-DJ // 1.28 GB AUTONOMOUS NEURAL DIRECTOR CLOUD BUILDER"
+echo " APEX-DJ // TERMUX TO GITHUB ACTIONS CLOUD FAT-APK & OBB BUILDER"
 echo "================================================================="
 
 pkg install -y git gh
 
 git add -A
-git commit -m "1.28GB Autonomous Neural Director, 64-Bit Hermite Resampler, Custom App Icon & Silent Launch" || true
+git commit -m "Build Gemini 4 Argon Flagship DJ App (OBB Expansion, 6-Engine Search, Jogwheels, 14 Beat FX, Stems)" || true
 git push -u origin HEAD
 
-echo "[+] Code pushed to GitHub successfully. Waiting 10 seconds for workflow..."
-sleep 10
+echo "[+] Code pushed to GitHub successfully. Monitoring cloud build..."
+sleep 5
 
 RUN_ID=$(gh run list --limit 1 --json databaseId --jq '.[0].databaseId')
 echo "[+] Watching GitHub Actions Run ID: $RUN_ID"
 gh run watch "$RUN_ID"
 
-termux-setup-storage || true
-sleep 2
-
-mkdir -p ~/ApexDJ_Build
-gh run download "$RUN_ID" -n "ApexDJ-Flagship-1Crore-Edition-APK" -D ~/ApexDJ_Build/
-
-mkdir -p ~/storage/downloads/ApexDJ_Build
-cp -f ~/ApexDJ_Build/*.apk ~/storage/downloads/ApexDJ_Build/
-ls -lh ~/storage/downloads/ApexDJ_Build/
-echo "[✓] SUCCESS! 1.28 GB Autonomous Neural Pro APK saved to Downloads/ApexDJ_Build/app-release.apk"
+mkdir -p /sdcard/Download/ApexDJ_Build
+gh run download "$RUN_ID" -n "ApexDJ-Flagship-1Crore-Edition-APK" -D /sdcard/Download/ApexDJ_Build/
+echo "[✓] SUCCESS! Installable Fat-APK & .OBB Expansion downloaded to: /sdcard/Download/ApexDJ_Build/"
