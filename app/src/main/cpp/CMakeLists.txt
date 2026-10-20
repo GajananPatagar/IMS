@@ -10,7 +10,7 @@ set(ORT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime)
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-stretch
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-linear
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
     ${ORT_DIR}/headers
 )
 

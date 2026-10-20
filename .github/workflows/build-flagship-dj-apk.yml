@@ -23,14 +23,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Vendor Signalsmith Stretch & Direct STFT Header
+      - name: Vendor Signalsmith Stretch & Linear Dependencies
         run: |
-          mkdir -p app/src/main/cpp/third_party/signalsmith-stretch/signalsmith-linear
+          # Vendor signalsmith-stretch
+          mkdir -p app/src/main/cpp/third_party/signalsmith-stretch
           git clone --depth 1 https://github.com/Signalsmith-Audio/signalsmith-stretch.git /tmp/signalsmith
           cp -r /tmp/signalsmith/* app/src/main/cpp/third_party/signalsmith-stretch/
           
-          # Fetch stft.h directly into the required subdirectory
-          curl -L https://raw.githubusercontent.com/Signalsmith-Audio/linear/main/stft.h -o app/src/main/cpp/third_party/signalsmith-stretch/signalsmith-linear/stft.h
+          # Vendor signalsmith-linear (Required by signalsmith-stretch.h for stft.h)
+          mkdir -p app/src/main/cpp/third_party/signalsmith-linear
+          git clone --depth 1 https://github.com/Signalsmith-Audio/linear.git /tmp/linear
+          cp -r /tmp/linear/* app/src/main/cpp/third_party/signalsmith-linear/
 
       - name: Build Neural Models & PUBG/FreeFire Style .OBB Expansion File
         run: |
