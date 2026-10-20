@@ -3,6 +3,7 @@ package com.apexdj.butter.ui
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -10,14 +11,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawLine
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -97,7 +99,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             .padding(6.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Top Header & Status Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -126,7 +127,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Workspace Navigation Tabs
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TabButton("1. PRO CONSOLE", selectedTab == 0, Modifier.weight(1f)) { selectedTab = 0 }
             TabButton("2. 6-ENGINE REMIX CRATE", selectedTab == 1, Modifier.weight(1f)) { selectedTab = 1 }
@@ -138,7 +138,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
         when (selectedTab) {
             0 -> {
-                // Tab 0: Pro Console (Decks + Master + Waveforms + Spectrum)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     DeckConsoleCard(0, "DECK A (CDJ-3000)", Color(0xFF00E5FF), bpmDeckA, keyDeckA, playheadA, rgbWaveA, repo, Modifier.weight(1f))
                     DeckConsoleCard(1, "DECK B (CDJ-3000)", Color(0xFFFA903E), bpmDeckB, keyDeckB, playheadB, rgbWaveB, repo, Modifier.weight(1f))
@@ -183,7 +182,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 }
             }
             1 -> {
-                // Tab 1: 6-Engine Remix Crate & OBB Vault
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -254,7 +252,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 }
             }
             2 -> {
-                // Tab 2: 8-Pad Club Sampler & Stems
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -285,7 +282,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 }
             }
             3 -> {
-                // Tab 3: Gemini 4 Argon AI Copilot
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -346,7 +342,6 @@ fun DeckConsoleCard(
 ) {
     var playing by remember { mutableStateOf(false) }
     var fader by remember { mutableFloatStateOf(1f) }
-    var comp by remember { mutableFloatStateOf(0.2f) }
     var eqLo by remember { mutableFloatStateOf(0f) }
     var eqLm by remember { mutableFloatStateOf(0f) }
     var eqHm by remember { mutableFloatStateOf(0f) }
@@ -387,7 +382,6 @@ fun DeckConsoleCard(
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        // CDJ-3000 Touch Jogwheel Scratch Simulator
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -411,7 +405,6 @@ fun DeckConsoleCard(
 
         Spacer(modifier = Modifier.height(3.dp))
 
-        // 8 Hot Cues & Loop Pads
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             for (c in 0 until 4) {
                 Button(
