@@ -23,11 +23,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Vendor Signalsmith Stretch Header-Only C++ Library
+      - name: Vendor Signalsmith Stretch & Linear Dependencies
         run: |
           mkdir -p app/src/main/cpp/third_party/signalsmith-stretch
           git clone --depth 1 https://github.com/Signalsmith-Audio/signalsmith-stretch.git /tmp/signalsmith
           cp -r /tmp/signalsmith/* app/src/main/cpp/third_party/signalsmith-stretch/
+          
+          mkdir -p app/src/main/cpp/third_party/signalsmith-linear
+          git clone --depth 1 https://github.com/Signalsmith-Audio/linear.git /tmp/linear
+          cp -r /tmp/linear/* app/src/main/cpp/third_party/signalsmith-linear/
 
       - name: Build Neural Models & PUBG/FreeFire Style .OBB Expansion File
         run: |
@@ -46,16 +50,14 @@ jobs:
           os.makedirs(obb_models, exist_ok=True)
           os.makedirs(obb_samples, exist_ok=True)
 
-          # 1. Fetch HT-Demucs FT 4-Stem Specialist ONNX Models
           stems = ["drums", "bass", "other", "vocals"]
           for stem in stems:
               repo_id = f"StemSplitio/htdemucs-ft-{stem}-onnx"
               filename = f"htdemucs_ft_{stem}.onnx"
               target_asset = os.path.join(assets_dir, filename)
               try:
-                  print(f"Fetching {repo_id}/{filename}...")
+                  print(f"Fetching {repo_id}/{filename}[span_0](start_span)[span_0](end_span)...")
                   p = hf_hub_download(repo_id=repo_id, filename=filename, local_dir=assets_dir)
-                  # Copy into OBB staging as well
                   with open(p, "rb") as src, open(os.path.join(obb_models, filename), "wb") as dst:
                       dst.write(src.read())
               except Exception as e:
@@ -65,7 +67,6 @@ jobs:
                   with open(os.path.join(obb_models, filename), "wb") as f:
                       f.write(b"ONNX_ARGON_NEURAL_WEIGHTS")
 
-          # 2. Generate 96kHz Club FX Sample Bank for the .OBB Expansion Pack
           sr = 48000
           def save_wav(name, samples):
               path = os.path.join(obb_samples, name)
@@ -77,14 +78,12 @@ jobs:
                       val = max(-32767, min(32767, int(s * 32767.0)))
                       w.writeframesraw(struct.pack('<hh', val, val))
 
-          # Synthesize Festival Airhorn, 808 Sub Drop, White Noise Riser, Laser Zap
           horn = [math.tanh(2.5 * (math.sin(2*math.pi*440*t/sr) + 0.6*math.sin(2*math.pi*554.37*t/sr) + 0.5*math.sin(2*math.pi*659.25*t/sr))) * (1.0 - t/(sr*1.5)) for t in range(int(sr*1.5))]
           save_wav("festival_airhorn.wav", horn)
 
           sub_drop = [math.sin(2*math.pi*(110.0 * math.pow(0.25, t/(sr*2.0)))*t/sr) * (1.0 - t/(sr*2.0)) for t in range(int(sr*2.0))]
           save_wav("sub_808_drop.wav", sub_drop)
 
-          # Package into main.1.com.apexdj.butter.obb (Uncompressed ZIP for zero-copy mmap)
           obb_filename = "main.1.com.apexdj.butter.obb"
           with zipfile.ZipFile(obb_filename, 'w', compression=zipfile.ZIP_STORED) as zf:
               for root, _, files in os.walk("obb_staging"):
