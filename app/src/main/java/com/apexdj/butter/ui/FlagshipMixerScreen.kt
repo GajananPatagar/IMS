@@ -70,7 +70,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var deckATrackId by remember { mutableStateOf("") }
     var deckBTrackId by remember { mutableStateOf("") }
 
-    var autoDjEnabled by remember { mutableStateOf(true) }
+    var autoDjEnabled by remember { mutableStateOf(false) }
     val remixQueue = remember { mutableStateListOf<SongTrack>() }
     var masterActiveDeck by remember { mutableIntStateOf(0) }
     var morphInProgress by remember { mutableStateOf(false) }
@@ -255,7 +255,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                             .border(1.dp, CyanDeckA, RoundedCornerShape(4.dp))
                             .padding(horizontal = 5.dp, vertical = 1.dp)
                     ) {
-                        Text("1.28 GB NEURAL DIRECTOR", color = CyanDeckA, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+                        Text("V8.0 AUTONOMOUS NEURAL PRO", color = CyanDeckA, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
