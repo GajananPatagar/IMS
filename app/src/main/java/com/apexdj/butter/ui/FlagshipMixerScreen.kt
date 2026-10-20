@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -19,7 +20,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.drawLine
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     val scope = rememberCoroutineScope()
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Pro Console, 1: Remix Crate & OBB, 2: Sampler & Stems, 3: Argon AI Copilot
+    var selectedTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<SongTrack>>(emptyList()) }
     var statusBanner by remember { mutableStateOf("Gemini 4 Argon AI Engine Active • 96kHz / 64-Bit V10 + Euphonia Matrix Ready") }
@@ -154,7 +154,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 ) {
                     Text("MASTER CONSOLE // 14 BEAT FX • NEVE TRANSFORMER • 3-BAND ISOLATOR • 32-BAND SPECTRUM", color = Color(0xFFFCC934), fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(4.dp))
-                    
+
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         RotaryKnob3D("ISO LOW", isoLow, true, Color(0xFF00E5FF), Modifier.weight(1f)) { isoLow = it; repo.nativeSetMasterParam(1, it) }
                         RotaryKnob3D("ISO MID", isoMid, true, Color(0xFF57AB5A), Modifier.weight(1f)) { isoMid = it; repo.nativeSetMasterParam(2, it) }
@@ -262,7 +262,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     Text("8-PAD CLUB SAMPLER & 4-STEM VIRTUAL CONSOLE", color = Color(0xFFFCC934), fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
                     val samplers = listOf("1. Airhorn", "2. 808 Drop", "3. Noise Riser", "4. Laser Zap", "5. Snare Hit", "6. Sub Suck", "7. Dub Siren", "8. Backspin")
-                    
+
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         for (row in 0 until 2) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -291,7 +291,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 ) {
                     Text("GEMINI 4 ARGON // AUTONOMOUS AI DJ TRANSITION & HARMONIC COPILOT", color = Color(0xFF00E5FF), fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(6.dp))
-                    
+
                     val aiRec = repo.computeArgonAiRecommendation(bpmDeckA, keyDeckA, bpmDeckB, keyDeckB)
 
                     Text("Harmonic Match: ${aiRec.compatibilityScore}%", color = Color(0xFF57AB5A), fontSize = 13.sp, fontWeight = FontWeight.Bold)
