@@ -31,9 +31,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK without auto-installing conflicting NDK manager
-        uses: android-actions/setup-android@v3
-
       - name: Vendor Signalsmith Stretch & Linear C++ Headers
         run: |
           mkdir -p app/src/main/cpp/third_party/signalsmith-stretch
@@ -125,7 +122,6 @@ jobs:
 
       - name: Compile ~50MB Signed Release APK
         run: |
-          # Let Gradle download NDK 27 automatically via Android Gradle Plugin prefab/ndkVersion without command-line tool conflicts
           gradle wrapper --gradle-version 8.9
           chmod +x ./gradlew
           keytool -genkey -v -keystore /tmp/release.keystore -alias apexdj -keyalg RSA -keysize 2048 -validity 10000 -storepass apexdj123 -keypass apexdj123 -dname "CN=GajananPatagar, OU=ApexDJ, O=ArgonAudio, L=Bengaluru, S=KA, C=IN"
