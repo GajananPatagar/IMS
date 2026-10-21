@@ -5,14 +5,12 @@ plugins {
 
 android {
     namespace = "com.apexdj.butter"
-    compileSdk = 35
-    // Remove fixed ndkVersion string so AGP uses its default stable toolchain version cleanly
-    useLibrary("swappy")
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.apexdj.butter"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 34
         versionCode = 12
         versionName = "12.0-Neural-Brain-50MB-App-1.5GB-OBB"
 
@@ -34,10 +32,10 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file(System.getenv("ANDROID_KEYSTORE_FILE") ?: "/tmp/release.keystore")
-            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "apexdj123"
-            keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "apexdj"
-            keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: "apexdj123"
+            storeFile = file("/tmp/release.keystore")
+            storePassword = "apexdj123"
+            keyAlias = "apexdj"
+            keyPassword = "apexdj123"
         }
     }
 
