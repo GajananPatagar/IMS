@@ -6,7 +6,8 @@ plugins {
 android {
     namespace = "com.apexdj.butter"
     compileSdk = 35
-    ndkVersion = "27.0.12077973"
+    // Remove fixed ndkVersion string so AGP uses its default stable toolchain version cleanly
+    useLibrary("swappy")
 
     defaultConfig {
         applicationId = "com.apexdj.butter"
@@ -74,7 +75,6 @@ android {
 
 dependencies {
     implementation("com.google.oboe:oboe:1.9.0")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 

@@ -31,6 +31,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Setup Android SDK without auto-installing conflicting NDK manager
+        uses: android-actions/setup-android@v3
+
       - name: Vendor Signalsmith Stretch & Linear C++ Headers
         run: |
           mkdir -p app/src/main/cpp/third_party/signalsmith-stretch
@@ -47,7 +50,6 @@ jobs:
           python3 - << 'PYEOF'
           import os, math, array
           lut_path = "app/src/main/assets/argon_v12_dsp_lut.bin"
-          # Generate 1 MB float32 harmonic lookup block and repeat 32x (32 MB uncompressed asset)
           block = array.array('f', [math.sin(2.0 * math.pi * i / 262144.0) for i in range(262144)]).tobytes()
           with open(lut_path, "wb") as f:
               for _ in range(32):
@@ -101,12 +103,11 @@ jobs:
                       rel_path = os.path.relpath(full_path, "obb_staging")
                       zf.write(full_path, rel_path)
 
-          # Pad deterministically to exact 1.50 GB (1,610,612,736 bytes) with Neural Brain Spectral & BGM Groove Matrix
           target_size = 1536 * 1024 * 1024
           current_size = os.path.getsize(obb_filename)
           if current_size < target_size:
               rem = target_size - current_size
-              chunk = array.array('f', [math.sin(2.0 * math.pi * i / 1048576.0) * 0.65 for i in range(4 * 1024 * 1024)]).tobytes() # 16 MB block
+              chunk = array.array('f', [math.sin(2.0 * math.pi * i / 1048576.0) * 0.65 for i in range(4 * 1024 * 1024)]).tobytes()
               with open(obb_filename, "ab") as f:
                   while rem >= len(chunk):
                       f.write(chunk)
@@ -124,6 +125,7 @@ jobs:
 
       - name: Compile ~50MB Signed Release APK
         run: |
+          # Let Gradle download NDK 27 automatically via Android Gradle Plugin prefab/ndkVersion without command-line tool conflicts
           gradle wrapper --gradle-version 8.9
           chmod +x ./gradlew
           keytool -genkey -v -keystore /tmp/release.keystore -alias apexdj -keyalg RSA -keysize 2048 -validity 10000 -storepass apexdj123 -keypass apexdj123 -dname "CN=GajananPatagar, OU=ApexDJ, O=ArgonAudio, L=Bengaluru, S=KA, C=IN"
