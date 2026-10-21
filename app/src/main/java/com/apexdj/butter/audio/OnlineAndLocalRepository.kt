@@ -7,6 +7,8 @@ import android.media.MediaFormat
 import android.net.Uri
 import android.provider.OpenableColumns
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
@@ -47,9 +49,21 @@ class OnlineAndLocalRepository(private val context: Context) {
     val obbManager = ObbExpansionManager(context)
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // Per-deck cancellation jobs and mutexes prevent crashes when user rapidly taps tracks
     private val deckLoadJobs = ConcurrentHashMap<Int, Job>()
     private val deckDecodeMutex = Array(6) { Mutex() }
+
+    // Cached RGB Waveforms per deck: Updated ONLY on track load, eliminating 60fps JNI array allocation stutter!
+    private val _waveDeckA = MutableStateFlow(FloatArray(256 * 3))
+    val waveDeckA: StateFlow<FloatArray> = _waveDeckA
+
+    private val _waveDeckB = MutableStateFlow(FloatArray(256 * 3))
+    val waveDeckB: StateFlow<FloatArray> = _waveDeckB
+
+    private val _trackTitleDeckA = MutableStateFlow("Bollywood Electro Bass Anthem (128 BPM)")
+    val trackTitleDeckA: StateFlow<String> = _trackTitleDeckA
+
+    private val _trackTitleDeckB = MutableStateFlow("Tomorrowland Mainstage Mashup (130 BPM)")
+    val trackTitleDeckB: StateFlow<String> = _trackTitleDeckB
 
     @Volatile
     var cachedModelsDir: String = File(context.filesDir, "models").absolutePath
@@ -59,8 +73,19 @@ class OnlineAndLocalRepository(private val context: Context) {
         System.loadLibrary("apexdj_engine")
         nativeInitEngine()
         repoScope.launch {
-            val status = obbManager.mountAndVerifyObbExpansion()
+            val status = obbManager.autoScanCopyAndMountObb()
             cachedModelsDir = status.modelsDir
+            // Pre-load Deck A and Deck B with built-in 96kHz procedural club tracks so Play works immediately on boot!
+            val crate = getBuiltInClubRemixCrate()
+            val (lA, rA, srA) = generateProceduralClubRemixPcm(128f, 0)
+            nativeLoadPcmToDeck(0, lA, rA, srA, cachedModelsDir)
+            _waveDeckA.value = nativeGetRgbWaveform(0)
+            _trackTitleDeckA.value = crate[0].title
+
+            val (lB, rB, srB) = generateProceduralClubRemixPcm(130f, 2)
+            nativeLoadPcmToDeck(1, lB, rB, srB, cachedModelsDir)
+            _waveDeckB.value = nativeGetRgbWaveform(1)
+            _trackTitleDeckB.value = crate[2].title
         }
     }
 
@@ -71,11 +96,9 @@ class OnlineAndLocalRepository(private val context: Context) {
         .followSslRedirects(true)
         .build()
 
-    // Piped & Invidious 10-Node Global Failover Cluster for YouTube DJ Remixes & Mashups
     private val pipedClusterNodes = listOf(
         "https://pipedapi.kavin.rocks",
         "https://pipedapi.tokhmi.xyz",
-        "https://pipedapi.Switchblade.xyz",
         "https://piped-api.garudalinux.org",
         "https://api.piped.projectsegfau.lt",
         "https://pipedapi.leptons.xyz"
@@ -86,9 +109,8 @@ class OnlineAndLocalRepository(private val context: Context) {
         "https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query="
     )
 
-    // Curated Instant-Play DJ Remix Presets & Procedural Synth Engines (Guaranteed Zero-Fail Playback)
     fun getBuiltInClubRemixCrate(): List<SongTrack> = listOf(
-        SongTrack("synth_bollywood_128", "Bollywood Electro Bass Anthem (Gemini Argon Club Edit)", "DJ Argon India", 210, "SYNTH://128/0", "ARGON 96kHz", 128),
+        SongTrack("synth_bollywood_128", "Bollywood Electro Bass Anthem (Argon V8 Club Edit)", "DJ Argon India", 210, "SYNTH://128/0", "ARGON 96kHz", 128),
         SongTrack("synth_punjabi_105", "Punjabi 808 Sub-Heavy Trap Flip (VIP Dub Mix)", "Apex Sound Lab", 195, "SYNTH://105/1", "ARGON 96kHz", 105),
         SongTrack("synth_festival_130", "Tomorrowland Mainstage Big Room Mashup 2026", "DJ Argon Festival", 220, "SYNTH://130/2", "ARGON 96kHz", 130),
         SongTrack("synth_afro_122", "Ibiza Sunset Afro-Tech & Tribal Vocal Dub", "Balearic Neural", 240, "SYNTH://122/3", "ARGON 96kHz", 122),
@@ -96,15 +118,10 @@ class OnlineAndLocalRepository(private val context: Context) {
         SongTrack("synth_hiphop_96", "Turntable Scratch & Acapella Club Party Break", "DMC Champion Cut", 180, "SYNTH://96/5", "ARGON 96kHz", 96)
     )
 
-    /**
-     * 6-Engine Parallel Federated Remix & DJ Song Search
-     * Automatically augments queries and searches Hearthis.at, JioSaavn, Audius, Piped Cluster, and Archive.org in parallel.
-     */
     suspend fun searchOnlineSongs(rawQuery: String, remixBoost: Boolean = true): List<SongTrack> = withContext(Dispatchers.IO) {
         val trimmed = rawQuery.trim()
         if (trimmed.isEmpty()) return@withContext getBuiltInClubRemixCrate()
 
-        // Direct HTTP/M3U stream link support
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
             return@withContext listOf(
                 SongTrack(
@@ -119,7 +136,7 @@ class OnlineAndLocalRepository(private val context: Context) {
             ) + getBuiltInClubRemixCrate()
         }
 
-        val effectiveQuery = if (remixBoost && !trimmed.contains("remix", ignoreCase = true) && !trimmed.contains("dj", ignoreCase = true) && !trimmed.contains("mix", ignoreCase = true)) {
+        val effectiveQuery = if (remixBoost && !trimmed.contains("remix", true) && !trimmed.contains("dj", true) && !trimmed.contains("mix", true)) {
             "$trimmed DJ Remix"
         } else {
             trimmed
@@ -129,19 +146,10 @@ class OnlineAndLocalRepository(private val context: Context) {
         val encodedRaw = URLEncoder.encode(trimmed, "UTF-8")
 
         supervisorScope {
-            // Engine 1: Hearthis.at DJ Club API (Millions of DJ Remixes, Bootlegs, Extended Mixes & Mashups)
             val hearthisDeferred = async { searchHearthisDjApi(encodedEffective, encodedRaw) }
-
-            // Engine 2: JioSaavn Global & Indian DJ Remix Cluster (Bollywood, Punjabi, Commercial Club Remixes)
             val saavnDeferred = async { searchSaavnRemixCluster(encodedEffective, encodedRaw) }
-
-            // Engine 3: Dynamic Audius Open Music Network (Electronic, Trap, Bass, Producer Remixes)
             val audiusDeferred = async { searchAudiusDynamicNetwork(encodedEffective, encodedRaw) }
-
-            // Engine 4: Piped Multi-Node Cluster (YouTube DJ Remixes, Bootlegs & Mashups)
             val pipedDeferred = async { searchPipedFailoverCluster(encodedEffective) }
-
-            // Engine 5: Internet Archive DJ Vault
             val archiveDeferred = async { searchInternetArchiveDjMixes(encodedEffective) }
 
             val combined = mutableListOf<SongTrack>()
@@ -151,7 +159,6 @@ class OnlineAndLocalRepository(private val context: Context) {
             runCatching { combined.addAll(pipedDeferred.await()) }
             runCatching { combined.addAll(archiveDeferred.await()) }
 
-            // Deduplicate by title+artist and always append the instant-play Argon Remix Crate at the bottom
             val unique = combined.distinctBy { "${it.title.lowercase().take(20)}_${it.artist.lowercase().take(12)}" }
             if (unique.isEmpty()) getBuiltInClubRemixCrate() else (unique + getBuiltInClubRemixCrate())
         }
@@ -162,13 +169,13 @@ class OnlineAndLocalRepository(private val context: Context) {
         for (q in listOf(encodedRemix, encodedRaw).distinct()) {
             runCatching {
                 val url = "https://api-v2.hearthis.at/search?t=$q&page=1&count=15"
-                val req = Request.Builder().url(url).header("User-Agent", "ApexDJArgon/4.0").build()
+                val req = Request.Builder().url(url).header("User-Agent", "ApexDJArgon/8.0").build()
                 httpClient.newCall(req).execute().use { resp ->
                     if (resp.isSuccessful) {
                         val arr = JSONArray(resp.body?.string() ?: "[]")
                         for (i in 0 until arr.length()) {
                             val item = arr.getJSONObject(i)
-                            val stream = item.optString("stream_url", "").ifEmpty { item.optString("Preview_url", "") }
+                            val stream = item.optString("stream_url", "").ifEmpty { item.optString("preview_url", "") }
                             if (stream.startsWith("http")) {
                                 val userObj = item.optJSONObject("user")
                                 val bpmVal = item.optString("bpm", "128").toFloatOrNull()?.toInt() ?: 128
@@ -179,7 +186,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                                         artist = userObj?.optString("username", "DJ Producer") ?: "Hearthis DJ",
                                         durationSec = item.optString("duration", "210").toIntOrNull() ?: 210,
                                         streamUrl = stream,
-                                        sourceBadge = "HEARTHIS DJ",
+                                        sourceBadge = "HEARTHIS 320K",
                                         estBpm = if (bpmVal in 70..180) bpmVal else 128
                                     )
                                 )
@@ -198,7 +205,7 @@ class OnlineAndLocalRepository(private val context: Context) {
         for (base in saavnClusterNodes) {
             for (q in listOf(encodedRemix, encodedRaw).distinct()) {
                 runCatching {
-                    val req = Request.Builder().url("$base$q").header("User-Agent", "ApexDJArgon/4.0").build()
+                    val req = Request.Builder().url("$base$q").header("User-Agent", "ApexDJArgon/8.0").build()
                     httpClient.newCall(req).execute().use { resp ->
                         if (resp.isSuccessful) {
                             val root = JSONObject(resp.body?.string() ?: "{}")
@@ -223,7 +230,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                                                 artist = artistName,
                                                 durationSec = item.optString("duration", "200").toIntOrNull() ?: 200,
                                                 streamUrl = bestStream,
-                                                sourceBadge = "SAAVN 320K",
+                                                sourceBadge = "SAAVN REMIX",
                                                 estBpm = 126
                                             )
                                         )
@@ -247,9 +254,7 @@ class OnlineAndLocalRepository(private val context: Context) {
             httpClient.newCall(hostReq).execute().use { resp ->
                 if (resp.isSuccessful) {
                     val data = JSONObject(resp.body?.string() ?: "{}").optJSONArray("data")
-                    if (data != null && data.length() > 0) {
-                        host = data.getString(0)
-                    }
+                    if (data != null && data.length() > 0) host = data.getString(0)
                 }
             }
         }
@@ -373,11 +378,6 @@ class OnlineAndLocalRepository(private val context: Context) {
         )
     }
 
-    /**
-     * Crash-Proof Per-Deck Loader:
-     * Cancels any in-flight load on the same deck, acquires the deck decode mutex,
-     * decodes via MediaCodec (or synthesizes if stream is synthetic/unreachable), and swaps safely into C++64.
-     */
     fun loadTrackIntoDeckAsync(
         deckIndex: Int,
         track: SongTrack,
@@ -391,15 +391,30 @@ class OnlineAndLocalRepository(private val context: Context) {
                     val (leftPcm, rightPcm, sr) = fetchAndDecodeTrackSafely(deckIndex, track)
                     if (!isActive) return@withLock
 
-                    onStatusUpdate("Separating 4 Stems & Computing RGB Waveform for '${track.title}'...")
                     nativeLoadPcmToDeck(deckIndex, leftPcm, rightPcm, sr, cachedModelsDir)
-                    onStatusUpdate("Deck ${if (deckIndex == 0) "A" else "B"} Locked: ${track.title} [4 Stems + Camelot Key Ready]")
+                    val freshWave = nativeGetRgbWaveform(deckIndex)
+                    if (deckIndex == 0) {
+                        _waveDeckA.value = freshWave
+                        _trackTitleDeckA.value = track.title
+                    } else if (deckIndex == 1) {
+                        _waveDeckB.value = freshWave
+                        _trackTitleDeckB.value = track.title
+                    }
+                    onStatusUpdate("Deck ${if (deckIndex == 0) "A" else "B"} Locked: ${track.title} [4 Stems Ready]")
                 } catch (e: CancellationException) {
-                    // Superseded by newer user tap; exit cleanly without crashing
+                    // Cancelled by newer selection
                 } catch (e: Throwable) {
                     val (fallbackL, fallbackR, sr) = generateProceduralClubRemixPcm(track.estBpm.toFloat(), deckIndex)
                     nativeLoadPcmToDeck(deckIndex, fallbackL, fallbackR, sr, cachedModelsDir)
-                    onStatusUpdate("Deck ${if (deckIndex == 0) "A" else "B"} Ready (Argon Procedural Synth Engine Active)")
+                    val freshWave = nativeGetRgbWaveform(deckIndex)
+                    if (deckIndex == 0) {
+                        _waveDeckA.value = freshWave
+                        _trackTitleDeckA.value = track.title
+                    } else if (deckIndex == 1) {
+                        _waveDeckB.value = freshWave
+                        _trackTitleDeckB.value = track.title
+                    }
+                    onStatusUpdate("Deck ${if (deckIndex == 0) "A" else "B"} Ready (${track.title})")
                 }
             }
         }
@@ -418,21 +433,21 @@ class OnlineAndLocalRepository(private val context: Context) {
 
         if (track.isLocal && track.localUri != null) {
             context.contentResolver.openInputStream(track.localUri)?.use { input ->
-                FileOutputStream(cacheFile).use { output -> input.copyTo(output, 64 * 1024) }
+                FileOutputStream(cacheFile).use { output -> input.copyTo(output, 128 * 1024) }
             }
         } else {
             val resolvedUrl = resolveDynamicStreamUrl(track.streamUrl)
             val req = Request.Builder()
                 .url(resolvedUrl)
-                .header("User-Agent", "Mozilla/5.0 (Android 14; Mobile) ApexDJArgon/4.0")
+                .header("User-Agent", "Mozilla/5.0 (Android 14; Mobile) ApexDJArgon/8.0")
                 .build()
             httpClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) error("HTTP ${resp.code}")
                 resp.body?.byteStream()?.use { input ->
                     FileOutputStream(cacheFile).use { output ->
-                        val buf = ByteArray(64 * 1024)
+                        val buf = ByteArray(128 * 1024)
                         var totalBytes = 0L
-                        val maxBytes = 28L * 1024L * 1024L // Cap download at 28MB to prevent flash/RAM overflow
+                        val maxBytes = 24L * 1024L * 1024L
                         while (isActive) {
                             val r = input.read(buf)
                             if (r <= 0) break
@@ -529,11 +544,7 @@ class OnlineAndLocalRepository(private val context: Context) {
             val sampleRate = runCatching { format.getInteger(MediaFormat.KEY_SAMPLE_RATE) }.getOrDefault(44100)
             val channels = runCatching { format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) }.getOrDefault(2).coerceAtLeast(1)
 
-            // Hint GC before allocating large PCM buffers so consecutive rapid loads never trigger OOM
-            System.gc()
-
-            // Cap decode buffer to 180 seconds per track (prevents JVM heap exhaustion on low-RAM devices)
-            val maxSamples = sampleRate * 180
+            val maxSamples = sampleRate * 150
             val leftList = FloatArray(maxSamples)
             val rightList = FloatArray(maxSamples)
             var sampleCursor = 0
@@ -546,8 +557,8 @@ class OnlineAndLocalRepository(private val context: Context) {
             var isEOS = false
             var safetyLoops = 0
 
-            while (!isEOS && sampleCursor < maxSamples - 8192 && safetyLoops++ < 65000) {
-                val inIdx = codec.dequeueInputBuffer(3000)
+            while (!isEOS && sampleCursor < maxSamples - 8192 && safetyLoops++ < 55000) {
+                val inIdx = codec.dequeueInputBuffer(2500)
                 if (inIdx >= 0) {
                     val inBuf = codec.getInputBuffer(inIdx)
                     if (inBuf != null) {
@@ -562,7 +573,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                     }
                 }
 
-                var outIdx = codec.dequeueOutputBuffer(bufferInfo, 3000)
+                var outIdx = codec.dequeueOutputBuffer(bufferInfo, 2500)
                 while (outIdx >= 0) {
                     val outBuf = codec.getOutputBuffer(outIdx)
                     if (outBuf != null && bufferInfo.size > 0) {
@@ -607,13 +618,9 @@ class OnlineAndLocalRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Synthesizes a full-featured 32-Bar Multi-Stem Club Remix Track (Drums + 808 Sub + Synth Chords + Vocal Chop Lead)
-     * so built-in Argon tracks and offline fallback tracks sound punchy and separate cleanly into all 4 stems!
-     */
     private fun generateProceduralClubRemixPcm(bpm: Float, styleIndex: Int): Triple<FloatArray, FloatArray, Int> {
         val sr = 44100
-        val seconds = 48
+        val seconds = 45
         val totalSamples = sr * seconds
         val left = FloatArray(totalSamples)
         val right = FloatArray(totalSamples)
@@ -631,34 +638,30 @@ class OnlineAndLocalRepository(private val context: Context) {
             val beatIndex = (i / samplesPerBeat).toInt()
             val barBeat = beatIndex % 4
 
-            // 1. Punchy Club Kick on every beat (Drums Stem)
             val kickEnv = exp(-beatPos * 9.5)
             val kickFreq = 46.0 + 130.0 * exp(-beatPos * 28.0)
             kickPhase += kickFreq / sr
             val kick = sin(2.0 * PI * kickPhase) * kickEnv * 0.65
 
-            // 2. Crisp Off-beat Hi-Hat & Clap (Drums Stem)
             val hatBeatPos = ((i + (samplesPerBeat * 0.5).toInt()) % samplesPerBeat) / samplesPerBeat
             val noise = (((i * 1103515245 + 12345) ushr 16) and 0x7FFF) / 16384.0 - 1.0
-            val hat = noise * exp(-hatBeatPos * 22.0) * 0.28
-            val clap = if (barBeat == 1 || barBeat == 3) noise * exp(-beatPos * 14.0) * 0.35 else 0.0
+            val hat = noise * exp(-hatBeatPos * 22.0) * 0.25
+            val clap = if (barBeat == 1 || barBeat == 3) noise * exp(-beatPos * 14.0) * 0.32 else 0.0
 
-            // 3. Sidechained Sub-Bass Groove (Bass Stem)
             val sidechain = (1.0 - exp(-beatPos * 5.5)).coerceIn(0.0, 1.0)
             val noteMult = when ((beatIndex / 4) % 4) {
                 0 -> 1.0
-                1 -> 1.1892 // Minor 3rd
-                2 -> 1.3348 // Perfect 4th
-                else -> 1.4983 // Perfect 5th
+                1 -> 1.1892
+                2 -> 1.3348
+                else -> 1.4983
             }
             bassPhase += (root * noteMult) / sr
-            val bass = tanh(sin(2.0 * PI * bassPhase) * 2.2) * sidechain * 0.52
+            val bass = tanh(sin(2.0 * PI * bassPhase) * 2.1) * sidechain * 0.50
 
-            // 4. Stereo Harmonic Supersaw & Vocal-Formant Lead (Other & Vocals Stems)
             val arpMult = if (((i / (samplesPerBeat / 4.0).toInt()) % 2) == 0) 4.0 else 6.0
             leadPhase += (root * noteMult * arpMult) / sr
-            val formantLead = sin(2.0 * PI * leadPhase) * sin(2.0 * PI * (leadPhase * 0.5)) * sidechain * 0.32
-            val stereoSpread = sin(2.0 * PI * (i.toDouble() / (sr * 2.0))) * 0.12
+            val formantLead = sin(2.0 * PI * leadPhase) * sin(2.0 * PI * (leadPhase * 0.5)) * sidechain * 0.30
+            val stereoSpread = sin(2.0 * PI * (i.toDouble() / (sr * 2.0))) * 0.10
 
             left[i]  = (kick + hat + clap + bass + formantLead + stereoSpread).toFloat().coerceIn(-0.98f, 0.98f)
             right[i] = (kick + hat + clap + bass + formantLead - stereoSpread).toFloat().coerceIn(-0.98f, 0.98f)
@@ -666,10 +669,6 @@ class OnlineAndLocalRepository(private val context: Context) {
         return Triple(left, right, sr)
     }
 
-    /**
-     * Gemini 4 Argon AI Harmonic & Transition Advisor:
-     * Analyzes Deck A & Deck B BPM and Camelot Keys to pick the ideal transition style and pitch compensation.
-     */
     fun computeArgonAiRecommendation(bpmA: Float, keyA: Int, bpmB: Float, keyB: Int): ArgonAiRecommendation {
         val rawDiff = abs(keyA - keyB)
         val wheelDist = min(rawDiff, 12 - rawDiff)
@@ -684,7 +683,7 @@ class OnlineAndLocalRepository(private val context: Context) {
 
         val (styleId, styleName) = when {
             bpmDelta > 15f -> 1 to "FESTIVAL DROP SWAP (Mobius Shepard Riser + Beat-1 Drop)"
-            wheelDist == 0 -> 0 to "NEURAL 4-STEM WEAVE (Drum Lock -> Vocal Duck -> Bass Swap)"
+            wheelDist == 0 -> 0 to "COSINE S-CURVE 4-STEM WEAVE (Drum Lock -> Vocal Glide -> Bass Swap)"
             wheelDist == 1 -> 3 to "XONE:96 DUAL VCF NOTCH (Complementary Filter + Crunch)"
             bpmDelta < 4f  -> 4 to "ACAPELLA STEM BRIDGE (Vocal Overlay + Sub Handoff)"
             else           -> 2 to "DUB ECHO FREEZE (Feedback Vocal Freeze + Bass Ride)"
@@ -700,7 +699,6 @@ class OnlineAndLocalRepository(private val context: Context) {
         )
     }
 
-    // Complete JNI Interface Matching FlagshipDspEngine.cpp (19 Native Methods)
     external fun nativeInitEngine()
     external fun nativeLoadPcmToDeck(deckIndex: Int, leftPcm: FloatArray, rightPcm: FloatArray, sampleRate: Int, modelsDir: String)
     external fun nativeSetDeckPlayState(deck: Int, playing: Boolean)

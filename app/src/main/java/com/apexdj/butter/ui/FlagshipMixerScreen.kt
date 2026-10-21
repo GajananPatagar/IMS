@@ -36,34 +36,41 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<SongTrack>>(emptyList()) }
-    var statusBanner by remember { mutableStateOf("Gemini 4 Argon AI Engine Active • 96kHz / 64-Bit V10 + Euphonia Matrix Ready") }
-    var obbStatusText by remember { mutableStateOf("Scanning PUBG / FreeFire Style .OBB Expansion Pack...") }
+    var statusBanner by remember { mutableStateOf("Gemini 4 Argon V8 Engine • Lock-Free 96kHz/64-Bit DSP Ready") }
+    var obbStatusText by remember { mutableStateOf("Auto-Scanning OBB Expansion...") }
+
+    // Cached waveforms & titles (updated ONLY on track load — zero 60fps JNI array allocation stutter!)
+    val rgbWaveA by repo.waveDeckA.collectAsState()
+    val rgbWaveB by repo.waveDeckB.collectAsState()
+    val titleA by repo.trackTitleDeckA.collectAsState()
+    val titleB by repo.trackTitleDeckB.collectAsState()
 
     var crossfader by remember { mutableFloatStateOf(0f) }
     var neveDrive by remember { mutableFloatStateOf(0.65f) }
     var isoLow by remember { mutableFloatStateOf(0f) }
     var isoMid by remember { mutableFloatStateOf(0f) }
     var isoHigh by remember { mutableFloatStateOf(0f) }
+    var boostLow by remember { mutableStateOf(false) }
+    var boostMid by remember { mutableStateOf(false) }
+    var boostHigh by remember { mutableStateOf(false) }
     var masterBeatFx by remember { mutableFloatStateOf(0f) }
     var masterBeatWet by remember { mutableFloatStateOf(0f) }
 
     var vuDeckA by remember { mutableFloatStateOf(0f) }
     var vuDeckB by remember { mutableFloatStateOf(0f) }
     var bpmDeckA by remember { mutableFloatStateOf(128f) }
-    var bpmDeckB by remember { mutableFloatStateOf(128f) }
+    var bpmDeckB by remember { mutableFloatStateOf(130f) }
     var keyDeckA by remember { mutableIntStateOf(8) }
     var keyDeckB by remember { mutableIntStateOf(8) }
     var playheadA by remember { mutableFloatStateOf(0f) }
     var playheadB by remember { mutableFloatStateOf(0f) }
-    var rgbWaveA by remember { mutableStateOf(FloatArray(256 * 3)) }
-    var rgbWaveB by remember { mutableStateOf(FloatArray(256 * 3)) }
-
-    val spectrumState = remember { Array(32) { 0.2f } }
+    var morphProgress by remember { mutableFloatStateOf(-1f) }
 
     LaunchedEffect(Unit) {
-        val st = repo.obbManager.mountAndVerifyObbExpansion()
+        val st = repo.obbManager.autoScanCopyAndMountObb()
         obbStatusText = st.statusMessage
 
+        // Lightweight 30fps scalar telemetry loop (no array allocations, zero GC pause!)
         while (true) {
             vuDeckA = repo.nativeGetChannelVu(0)
             vuDeckB = repo.nativeGetChannelVu(1)
@@ -73,51 +80,78 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             keyDeckB = repo.nativeGetCamelotKey(1)
             playheadA = repo.nativeGetPlayheadNormalized(0)
             playheadB = repo.nativeGetPlayheadNormalized(1)
-            rgbWaveA = repo.nativeGetRgbWaveform(0)
-            rgbWaveB = repo.nativeGetRgbWaveform(1)
-            for (i in 0 until 32) {
-                spectrumState[i] = (0.2f + Math.random() * 0.6f).toFloat()
-            }
-            delay(16)
+            morphProgress = repo.nativeGetMorphProgress()
+            delay(33)
         }
     }
 
     var targetLocalDeck by remember { mutableIntStateOf(0) }
     val localPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
+            val track = repo.resolveLocalUriToTrack(uri)
+            repo.loadTrackIntoDeckAsync(targetLocalDeck, track) { msg -> statusBanner = msg }
+        }
+    }
+
+    val obbFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
             scope.launch {
-                val track = repo.resolveLocalUriToTrack(uri)
-                repo.loadTrackIntoDeckAsync(targetLocalDeck, track) { msg -> statusBanner = msg }
+                obbStatusText = "Copying .OBB to /Android/obb/com.apexdj.butter/..."
+                val st = repo.obbManager.importAndCopyObbFromUri(uri)
+                obbStatusText = st.statusMessage
             }
         }
     }
 
+    // Safe Window Insets: Never overlaps the top Android notification bar or navigation bar!
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF07090E))
-            .padding(6.dp)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .displayCutoutPadding()
+            .padding(horizontal = 6.dp, vertical = 4.dp)
             .verticalScroll(rememberScrollState())
     ) {
+        // Notification-Safe Top Telemetry Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF10131C), RoundedCornerShape(8.dp))
-                .padding(8.dp),
+                .background(Color(0xFF10141F), RoundedCornerShape(8.dp))
+                .border(1.dp, Color(0xFF1F2738), RoundedCornerShape(8.dp))
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "APEX-DJ // GEMINI 4 ARGON (1-CRORE TOURBION CONSOLE + OBB)",
+                    text = "APEX-DJ V8 // GEMINI 4 ARGON (V10-LF × DJM-A9 × EUPHONIA × XONE:96)",
                     color = Color(0xFF00E5FF),
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
+                    fontSize = 11.sp
                 )
-                Text("$statusBanner • $obbStatusText", color = Color(0xFF8B949E), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                Text(
+                    text = statusBanner,
+                    color = Color(0xFFD0D7DE),
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1
+                )
+                Text(
+                    text = obbStatusText,
+                    color = Color(0xFF57AB5A),
+                    fontSize = 8.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1
+                )
             }
-            Canvas(modifier = Modifier.size(75.dp, 28.dp).background(Color(0xFF04060A))) {
+            Canvas(
+                modifier = Modifier
+                    .size(78.dp, 26.dp)
+                    .background(Color(0xFF05070B), RoundedCornerShape(4.dp))
+            ) {
                 val w = size.width
                 val h = size.height
                 drawLine(Color(0xFF00E5FF), Offset(0f, h * 0.35f), Offset(w * vuDeckA.coerceIn(0f, 1f), h * 0.35f), strokeWidth = 6f)
@@ -125,12 +159,23 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             }
         }
 
+        if (morphProgress >= 0f) {
+            Spacer(modifier = Modifier.height(3.dp))
+            LinearProgressIndicator(
+                progress = { morphProgress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(5.dp),
+                color = Color(0xFFF538A0),
+                trackColor = Color(0xFF1F2430)
+            )
+        }
+
         Spacer(modifier = Modifier.height(4.dp))
 
+        // 4-Workspace Navigation Bar
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TabButton("1. PRO CONSOLE", selectedTab == 0, Modifier.weight(1f)) { selectedTab = 0 }
             TabButton("2. 6-ENGINE REMIX CRATE", selectedTab == 1, Modifier.weight(1f)) { selectedTab = 1 }
-            TabButton("3. 8-PAD SAMPLER & STEMS", selectedTab == 2, Modifier.weight(1f)) { selectedTab = 2 }
+            TabButton("3. 8-PAD SAMPLER & OBB", selectedTab == 2, Modifier.weight(1f)) { selectedTab = 2 }
             TabButton("4. ARGON AI COPILOT", selectedTab == 3, Modifier.weight(1f)) { selectedTab = 3 }
         }
 
@@ -139,8 +184,28 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
         when (selectedTab) {
             0 -> {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DeckConsoleCard(0, "DECK A (CDJ-3000)", Color(0xFF00E5FF), bpmDeckA, keyDeckA, playheadA, rgbWaveA, repo, Modifier.weight(1f))
-                    DeckConsoleCard(1, "DECK B (CDJ-3000)", Color(0xFFFA903E), bpmDeckB, keyDeckB, playheadB, rgbWaveB, repo, Modifier.weight(1f))
+                    DeckConsoleCard(
+                        deckIndex = 0,
+                        title = "DECK A // $titleA",
+                        accent = Color(0xFF00E5FF),
+                        bpm = bpmDeckA,
+                        camelotKey = keyDeckA,
+                        playheadNorm = playheadA,
+                        rgbWave = rgbWaveA,
+                        repo = repo,
+                        modifier = Modifier.weight(1f)
+                    )
+                    DeckConsoleCard(
+                        deckIndex = 1,
+                        title = "DECK B // $titleB",
+                        accent = Color(0xFFFA903E),
+                        bpm = bpmDeckB,
+                        camelotKey = keyDeckB,
+                        playheadNorm = playheadB,
+                        rgbWave = rgbWaveB,
+                        repo = repo,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -148,34 +213,78 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0E1118), RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0E121B), RoundedCornerShape(8.dp))
                         .border(1.dp, Color(0xFF21262D), RoundedCornerShape(8.dp))
                         .padding(6.dp)
                 ) {
-                    Text("MASTER CONSOLE // 14 BEAT FX • NEVE TRANSFORMER • 3-BAND ISOLATOR • 32-BAND SPECTRUM", color = Color(0xFFFCC934), fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "MASTER BUS // RUPERT NEVE TRANSFORMER • EUPHONIA BOOST SEND • COSINE BUTTER MORPH",
+                            color = Color(0xFFFCC934),
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            BoostSendChip("BOOST LO", boostLow) {
+                                boostLow = !boostLow
+                                repo.nativeSetMasterParam(5, if (boostLow) 1f else 0f)
+                            }
+                            BoostSendChip("BOOST MID", boostMid) {
+                                boostMid = !boostMid
+                                repo.nativeSetMasterParam(6, if (boostMid) 1f else 0f)
+                            }
+                            BoostSendChip("BOOST HI", boostHigh) {
+                                boostHigh = !boostHigh
+                                repo.nativeSetMasterParam(7, if (boostHigh) 1f else 0f)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(3.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         RotaryKnob3D("ISO LOW", isoLow, true, Color(0xFF00E5FF), Modifier.weight(1f)) { isoLow = it; repo.nativeSetMasterParam(1, it) }
                         RotaryKnob3D("ISO MID", isoMid, true, Color(0xFF57AB5A), Modifier.weight(1f)) { isoMid = it; repo.nativeSetMasterParam(2, it) }
                         RotaryKnob3D("ISO HIGH", isoHigh, true, Color(0xFFFF5252), Modifier.weight(1f)) { isoHigh = it; repo.nativeSetMasterParam(3, it) }
-                        RotaryKnob3D("NEVE DRIVE", neveDrive, false, Color(0xFFFCC934), Modifier.weight(1f)) { neveDrive = it; repo.nativeSetMasterParam(4, it) }
-                        RotaryKnob3D("FX TYPE", masterBeatFx, false, Color(0xFFD29922), Modifier.weight(1f)) { masterBeatFx = it; repo.nativeSetMasterParam(8, it * 13f) }
-                        RotaryKnob3D("FX WET/DRY", masterBeatWet, false, Color(0xFFD29922), Modifier.weight(1f)) { masterBeatWet = it; repo.nativeSetMasterParam(9, it) }
+                        RotaryKnob3D("NEVE SILK", neveDrive, false, Color(0xFFFCC934), Modifier.weight(1f)) { neveDrive = it; repo.nativeSetMasterParam(4, it) }
+                        RotaryKnob3D("14 BEAT FX", masterBeatFx, false, Color(0xFFD29922), Modifier.weight(1f)) { masterBeatFx = it; repo.nativeSetMasterParam(8, it * 13f) }
+                        RotaryKnob3D("FX LEVEL", masterBeatWet, false, Color(0xFFD29922), Modifier.weight(1f)) { masterBeatWet = it; repo.nativeSetMasterParam(9, it) }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
-                    MasterSpectrumAnalyzer(spectrumState, modifier = Modifier.fillMaxWidth().height(24.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
+                    MasterSpectrumAnalyzer(vuDeckA, vuDeckB, modifier = Modifier.fillMaxWidth().height(20.dp))
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { repo.nativeTriggerButterMorph(0, 1, 12.0, 0); statusBanner = "Butter Morph A ➔ B Active" }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF538A0))) {
+                        Button(
+                            onClick = {
+                                repo.nativeTriggerButterMorph(0, 1, 12.0, 0)
+                                statusBanner = "Cosine S-Curve Butter Morph A ➔ B Active (Beat-Phase Locked)"
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF538A0))
+                        ) {
                             Text("BUTTER MORPH A ➔ B", fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Slider(value = crossfader, onValueChange = { crossfader = it; repo.nativeSetMasterParam(0, it) }, valueRange = -1f..1f, modifier = Modifier.weight(1f))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Button(onClick = { repo.nativeTriggerButterMorph(1, 0, 12.0, 0); statusBanner = "Butter Morph B ➔ A Active" }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Slider(
+                            value = crossfader,
+                            onValueChange = { crossfader = it; repo.nativeSetMasterParam(0, it) },
+                            valueRange = -1f..1f,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Button(
+                            onClick = {
+                                repo.nativeTriggerButterMorph(1, 0, 12.0, 0)
+                                statusBanner = "Cosine S-Curve Butter Morph B ➔ A Active (Beat-Phase Locked)"
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))
+                        ) {
                             Text("BUTTER MORPH B ➔ A", fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -185,28 +294,37 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0E1118), RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0E121B), RoundedCornerShape(8.dp))
                         .border(1.dp, Color(0xFF21262D), RoundedCornerShape(8.dp))
                         .padding(6.dp)
                 ) {
-                    Text("6-ENGINE FEDERATED REMIX SEARCH & .OBB EXPANSION VAULT", color = Color(0xFF00E5FF), fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "6-ENGINE PARALLEL REMIX SEARCH (HEARTHIS • JIOSAAVN • AUDIUS • PIPED • ARCHIVE • LOCAL)",
+                        color = Color(0xFF00E5FF),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            label = { Text("Search Trillions of Global & Indian Remixes (Hearthis, JioSaavn, Audius, Piped)", color = Color.LightGray, fontSize = 9.sp) },
+                            label = { Text("Search Global & Indian DJ Remixes or Paste Stream URL", color = Color.LightGray, fontSize = 9.sp) },
                             modifier = Modifier.weight(1f),
                             singleLine = true
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Button(onClick = {
-                            scope.launch {
-                                statusBanner = "Querying 6 parallel federated remix networks..."
-                                searchResults = repo.searchOnlineSongs(searchQuery)
-                                statusBanner = "Found ${searchResults.size} club remixes & bootlegs."
-                            }
-                        }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    statusBanner = "Searching 6 parallel remix networks for '$searchQuery'..."
+                                    searchResults = repo.searchOnlineSongs(searchQuery)
+                                    statusBanner = "Found ${searchResults.size} playable DJ remixes."
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))
+                        ) {
                             Text("Search", fontSize = 10.sp)
                         }
                         Spacer(modifier = Modifier.width(4.dp))
@@ -223,7 +341,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(280.dp)
+                            .height(270.dp)
                             .background(Color(0xFF06080D), RoundedCornerShape(6.dp))
                             .padding(4.dp)
                     ) {
@@ -239,11 +357,17 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                                     Text("${song.artist} • ${song.sourceBadge} • ${song.estBpm} BPM", color = Color(0xFF8B949E), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
                                 }
                                 Row {
-                                    TextButton(onClick = { repo.loadTrackIntoDeckAsync(0, song) { msg -> statusBanner = msg } }) {
-                                        Text("Deck A", color = Color(0xFF00E5FF), fontSize = 9.sp)
+                                    TextButton(onClick = {
+                                        repo.loadTrackIntoDeckAsync(0, song) { msg -> statusBanner = msg }
+                                        selectedTab = 0
+                                    }) {
+                                        Text("Load A", color = Color(0xFF00E5FF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                     }
-                                    TextButton(onClick = { repo.loadTrackIntoDeckAsync(1, song) { msg -> statusBanner = msg } }) {
-                                        Text("Deck B", color = Color(0xFFFA903E), fontSize = 9.sp)
+                                    TextButton(onClick = {
+                                        repo.loadTrackIntoDeckAsync(1, song) { msg -> statusBanner = msg }
+                                        selectedTab = 0
+                                    }) {
+                                        Text("Load B", color = Color(0xFFFA903E), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -255,11 +379,17 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0E1118), RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0E121B), RoundedCornerShape(8.dp))
                         .border(1.dp, Color(0xFF21262D), RoundedCornerShape(8.dp))
-                        .padding(6.dp)
+                        .padding(8.dp)
                 ) {
-                    Text("8-PAD CLUB SAMPLER & 4-STEM VIRTUAL CONSOLE", color = Color(0xFFFCC934), fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "8-PAD 96kHz CLUB SAMPLER & AUTOMATIC .OBB EXPANSION MANAGER",
+                        color = Color(0xFFFCC934),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
                     val samplers = listOf("1. Airhorn", "2. 808 Drop", "3. Noise Riser", "4. Laser Zap", "5. Snare Hit", "6. Sub Suck", "7. Dub Siren", "8. Backspin")
 
@@ -269,8 +399,8 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                                 for (col in 0 until 4) {
                                     val idx = row * 4 + col
                                     Button(
-                                        onClick = { repo.nativeTriggerSamplerPad(idx); statusBanner = "Triggered Sampler Pad: ${samplers[idx]}" },
-                                        modifier = Modifier.weight(1f).height(40.dp),
+                                        onClick = { repo.nativeTriggerSamplerPad(idx); statusBanner = "Sampler Pad: ${samplers[idx]}" },
+                                        modifier = Modifier.weight(1f).height(38.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F2430))
                                     ) {
                                         Text(samplers[idx], fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold)
@@ -279,36 +409,81 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                             }
                         }
                     }
+
+                    HorizontalDivider(color = Color(0xFF21262D), modifier = Modifier.padding(vertical = 8.dp))
+                    Text("PUBG / FREEFIRE STYLE .OBB AUTO-SCANNER & AUTO-COPIER", color = Color(0xFF00E5FF), fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(obbStatusText, color = Color(0xFF57AB5A), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    obbStatusText = "Scanning Download/ApexDJ_Build & copying to /Android/obb/..."
+                                    val st = repo.obbManager.autoScanCopyAndMountObb()
+                                    obbStatusText = st.statusMessage
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))
+                        ) {
+                            Text("AUTO-SCAN & COPY .OBB NOW", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = { obbFilePicker.launch("*/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D333B))
+                        ) {
+                            Text("SELECT .OBB FILE MANUALLY", fontSize = 9.sp)
+                        }
+                    }
                 }
             }
             3 -> {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0E1118), RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0E121B), RoundedCornerShape(8.dp))
                         .border(1.dp, Color(0xFF21262D), RoundedCornerShape(8.dp))
                         .padding(8.dp)
                 ) {
-                    Text("GEMINI 4 ARGON // AUTONOMOUS AI DJ TRANSITION & HARMONIC COPILOT", color = Color(0xFF00E5FF), fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "GEMINI 4 ARGON // AUTONOMOUS AI DJ TRANSITION & CAMELOT HARMONIC COPILOT",
+                        color = Color(0xFF00E5FF),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
 
                     val aiRec = repo.computeArgonAiRecommendation(bpmDeckA, keyDeckA, bpmDeckB, keyDeckB)
 
-                    Text("Harmonic Match: ${aiRec.compatibilityScore}%", color = Color(0xFF57AB5A), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text("Camelot Relation: ${aiRec.harmonicRelation}", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    Text("Recommended Style: ${aiRec.recommendedStyleName}", color = Color(0xFFFCC934), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("Harmonic Match Score: ${aiRec.compatibilityScore}%", color = Color(0xFF57AB5A), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Camelot Wheel Relation: ${aiRec.harmonicRelation}", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("Selected Morph Engine: ${aiRec.recommendedStyleName}", color = Color(0xFFFCC934), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                     Text(aiRec.summaryText, color = Color(0xFF8B949E), fontSize = 9.sp)
 
                     Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            repo.nativeTriggerButterMorph(0, 1, 14.0, aiRec.recommendedStyleId)
-                            statusBanner = "Gemini 4 Argon AI Executing '${aiRec.recommendedStyleName}'..."
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF538A0))
-                    ) {
-                        Text("EXECUTE GEMINI 4 ARGON AI TRANSITION NOW", fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = {
+                                repo.nativeTriggerButterMorph(0, 1, 14.0, aiRec.recommendedStyleId)
+                                statusBanner = "Argon AI Mixing Deck A ➔ Deck B (${aiRec.recommendedStyleName})"
+                                selectedTab = 0
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF538A0))
+                        ) {
+                            Text("AI AUTO-MIX A ➔ B (14s)", fontWeight = FontWeight.Bold, fontSize = 9.sp)
+                        }
+                        Button(
+                            onClick = {
+                                repo.nativeTriggerButterMorph(1, 0, 14.0, aiRec.recommendedStyleId)
+                                statusBanner = "Argon AI Mixing Deck B ➔ Deck A (${aiRec.recommendedStyleName})"
+                                selectedTab = 0
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))
+                        ) {
+                            Text("AI AUTO-MIX B ➔ A (14s)", fontWeight = FontWeight.Bold, fontSize = 9.sp)
+                        }
                     }
                 }
             }
@@ -317,10 +492,22 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 }
 
 @Composable
+fun BoostSendChip(label: String, active: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.height(22.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = if (active) Color(0xFFF538A0) else Color(0xFF1F2430))
+    ) {
+        Text(label, fontSize = 7.sp, color = Color.White, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+    }
+}
+
+@Composable
 fun TabButton(text: String, isSelected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(28.dp),
+        modifier = modifier.height(26.dp),
         contentPadding = PaddingValues(0.dp),
         colors = ButtonDefaults.buttonColors(containerColor = if (isSelected) Color(0xFF1A73E8) else Color(0xFF151922))
     ) {
@@ -342,6 +529,7 @@ fun DeckConsoleCard(
 ) {
     var playing by remember { mutableStateOf(false) }
     var fader by remember { mutableFloatStateOf(1f) }
+    var comp by remember { mutableFloatStateOf(0.2f) }
     var eqLo by remember { mutableFloatStateOf(0f) }
     var eqLm by remember { mutableFloatStateOf(0f) }
     var eqHm by remember { mutableFloatStateOf(0f) }
@@ -349,28 +537,35 @@ fun DeckConsoleCard(
     var vcfCutoff by remember { mutableFloatStateOf(0.5f) }
     var vcfCrunch by remember { mutableFloatStateOf(0f) }
     var colorFx by remember { mutableFloatStateOf(0f) }
-    var scratchVel by remember { mutableFloatStateOf(0f) }
+    var tempoRatio by remember { mutableFloatStateOf(1f) }
+
+    var stemDrums by remember { mutableFloatStateOf(1f) }
+    var stemBass by remember { mutableFloatStateOf(1f) }
+    var stemOther by remember { mutableFloatStateOf(1f) }
+    var stemVocals by remember { mutableFloatStateOf(1f) }
 
     Column(
         modifier = modifier
-            .background(Color(0xFF0F131C), RoundedCornerShape(8.dp))
+            .background(Color(0xFF0E121B), RoundedCornerShape(8.dp))
             .border(1.dp, accent.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-            .padding(6.dp)
+            .padding(5.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(title, color = accent, fontWeight = FontWeight.Bold, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                Text("%.1f BPM • %dA".format(bpm, camelotKey), color = Color(0xFF8B949E), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, color = accent, fontWeight = FontWeight.Bold, fontSize = 9.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+                Text("%.1f BPM (x%.2f) • Key %dA".format(bpm * tempoRatio, tempoRatio, camelotKey), color = Color(0xFF8B949E), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
             }
             Button(
                 onClick = {
                     playing = !playing
                     repo.nativeSetDeckPlayState(deckIndex, playing)
                 },
+                modifier = Modifier.height(26.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = if (playing) Color(0xFF57AB5A) else Color(0xFF21262D))
             ) {
                 Text(if (playing) "PAUSE" else "PLAY", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
@@ -378,72 +573,89 @@ fun DeckConsoleCard(
         }
 
         Spacer(modifier = Modifier.height(2.dp))
-        RgbScrollingWaveformView(rgbWave, playheadNorm, accent, modifier = Modifier.fillMaxWidth().height(40.dp))
+        RgbScrollingWaveformView(
+            rgbFlatArray = rgbWave,
+            playheadNormalized = playheadNorm,
+            accentColor = accent,
+            modifier = Modifier.fillMaxWidth().height(36.dp),
+            onSeek = { norm -> repo.nativeSeekNormalized(deckIndex, norm) }
+        )
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(45.dp)
-                .background(Color(0xFF06080D), CircleShape)
-                .border(1.5.dp, accent, CircleShape)
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { scratchVel = 1.5f; repo.nativeSetChannelParam(deckIndex, 18, 1.5f) },
-                        onDragEnd = { scratchVel = 0f; repo.nativeSetChannelParam(deckIndex, 18, 0f) },
-                        onDragCancel = { scratchVel = 0f; repo.nativeSetChannelParam(deckIndex, 18, 0f) }
-                    ) { _, dragAmount ->
-                        scratchVel = (dragAmount.x * 0.05f).coerceIn(-3f, 3f)
-                        repo.nativeSetChannelParam(deckIndex, 18, scratchVel)
-                    }
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Text("JOGWHEEL SCRATCH", color = accent.copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        // CDJ-3000 Touch Jogwheel + Pitch Slider Row
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(36.dp)
+                    .background(Color(0xFF06080D), CircleShape)
+                    .border(1.5.dp, accent, CircleShape)
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { repo.nativeSetChannelParam(deckIndex, 18, 1.2f) },
+                            onDragEnd = { repo.nativeSetChannelParam(deckIndex, 18, 0f) },
+                            onDragCancel = { repo.nativeSetChannelParam(deckIndex, 18, 0f) }
+                        ) { _, dragAmount ->
+                            val vel = (dragAmount.x * 0.05f).coerceIn(-3f, 3f)
+                            repo.nativeSetChannelParam(deckIndex, 18, vel)
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("CDJ-3000 JOG SCRATCH", color = accent, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            }
+            RotaryKnob3D("TEMPO", (tempoRatio - 1f) * 2f, true, accent) {
+                tempoRatio = (1f + it * 0.25f).coerceIn(0.75f, 1.25f)
+                repo.nativeSetChannelParam(deckIndex, 13, tempoRatio)
+            }
         }
 
-        Spacer(modifier = Modifier.height(3.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
+        // Real-Time 4-Stem Knobs + 4-Band Surgical EQ Knobs
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            RotaryKnob3D("DRUMS", stemDrums, false, Color(0xFF00E5FF), Modifier.weight(1f)) { stemDrums = it; repo.nativeSetChannelParam(deckIndex, 9, it) }
+            RotaryKnob3D("BASS", stemBass, false, Color(0xFFFF5252), Modifier.weight(1f)) { stemBass = it; repo.nativeSetChannelParam(deckIndex, 10, it) }
+            RotaryKnob3D("OTHER", stemOther, false, Color(0xFF57AB5A), Modifier.weight(1f)) { stemOther = it; repo.nativeSetChannelParam(deckIndex, 11, it) }
+            RotaryKnob3D("VOCALS", stemVocals, false, Color(0xFFF538A0), Modifier.weight(1f)) { stemVocals = it; repo.nativeSetChannelParam(deckIndex, 12, it) }
+        }
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            RotaryKnob3D("LO 220", eqLo, true, accent, Modifier.weight(1f)) { eqLo = it; repo.nativeSetChannelParam(deckIndex, 1, it) }
+            RotaryKnob3D("LM 320", eqLm, true, accent, Modifier.weight(1f)) { eqLm = it; repo.nativeSetChannelParam(deckIndex, 2, it) }
+            RotaryKnob3D("HM 1.8k", eqHm, true, accent, Modifier.weight(1f)) { eqHm = it; repo.nativeSetChannelParam(deckIndex, 3, it) }
+            RotaryKnob3D("HI 2.4k", eqHi, true, accent, Modifier.weight(1f)) { eqHi = it; repo.nativeSetChannelParam(deckIndex, 4, it) }
+        }
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            RotaryKnob3D("V10 COMP", comp, false, Color(0xFF58A6FF), Modifier.weight(1f)) { comp = it; repo.nativeSetChannelParam(deckIndex, 5, it) }
+            RotaryKnob3D("XONE VCF", vcfCutoff, false, Color(0xFFFCC934), Modifier.weight(1f)) { vcfCutoff = it; repo.nativeSetChannelParam(deckIndex, 7, it) }
+            RotaryKnob3D("CRUNCH", vcfCrunch, false, Color(0xFFFCC934), Modifier.weight(1f)) { vcfCrunch = it; repo.nativeSetChannelParam(deckIndex, 8, it) }
+            RotaryKnob3D("A9 COLOR", colorFx, true, Color(0xFFF538A0), Modifier.weight(1f)) { colorFx = it; repo.nativeSetChannelParam(deckIndex, 6, it) }
+            RotaryKnob3D("FADER", fader, false, Color(0xFF57AB5A), Modifier.weight(1f)) { fader = it; repo.nativeSetChannelParam(deckIndex, 0, it) }
+        }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        // Hot Cues & Beat Loops Row
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             for (c in 0 until 4) {
                 Button(
                     onClick = { repo.nativeTriggerHotCue(deckIndex, c) },
-                    modifier = Modifier.weight(1f).height(20.dp),
+                    modifier = Modifier.weight(1f).height(19.dp),
                     contentPadding = PaddingValues(0.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F2430))
                 ) {
-                    Text("CUE ${c + 1}", fontSize = 8.sp, color = Color.White)
+                    Text("CUE ${c + 1}", fontSize = 7.sp, color = Color.White)
                 }
             }
-        }
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            Button(onClick = { repo.nativeToggleBeatLoop(deckIndex, 4.0) }, modifier = Modifier.weight(1f).height(20.dp), contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D333B))) {
-                Text("4-BEAT", fontSize = 8.sp, color = Color(0xFF57AB5A))
+            Button(onClick = { repo.nativeToggleBeatLoop(deckIndex, 4.0) }, modifier = Modifier.weight(1f).height(19.dp), contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D333B))) {
+                Text("4-LOOP", fontSize = 7.sp, color = Color(0xFF57AB5A))
             }
-            Button(onClick = { repo.nativeToggleBeatLoop(deckIndex, 8.0) }, modifier = Modifier.weight(1f).height(20.dp), contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D333B))) {
-                Text("8-BEAT", fontSize = 8.sp, color = Color(0xFF57AB5A))
+            Button(onClick = { repo.nativeToggleBeatLoop(deckIndex, 0.0) }, modifier = Modifier.weight(1f).height(19.dp), contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B232A))) {
+                Text("EXIT", fontSize = 7.sp, color = Color(0xFFF85149))
             }
-            Button(onClick = { repo.nativeSetChannelParam(deckIndex, 16, 1f) }, modifier = Modifier.weight(1f).height(20.dp), contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B232A))) {
-                Text("BRAKE", fontSize = 8.sp, color = Color(0xFFF85149))
-            }
-            Button(onClick = { repo.nativeSetChannelParam(deckIndex, 15, 1f) }, modifier = Modifier.weight(1f).height(20.dp), contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D233B))) {
-                Text("REV", fontSize = 8.sp, color = Color(0xFFD29922))
-            }
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            RotaryKnob3D("LO", eqLo, true, accent, Modifier.weight(1f)) { eqLo = it; repo.nativeSetChannelParam(deckIndex, 1, it) }
-            RotaryKnob3D("LM", eqLm, true, accent, Modifier.weight(1f)) { eqLm = it; repo.nativeSetChannelParam(deckIndex, 2, it) }
-            RotaryKnob3D("HM", eqHm, true, accent, Modifier.weight(1f)) { eqHm = it; repo.nativeSetChannelParam(deckIndex, 3, it) }
-            RotaryKnob3D("HI", eqHi, true, accent, Modifier.weight(1f)) { eqHi = it; repo.nativeSetChannelParam(deckIndex, 4, it) }
-        }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            RotaryKnob3D("VCF", vcfCutoff, false, Color(0xFFFCC934), Modifier.weight(1f)) { vcfCutoff = it; repo.nativeSetChannelParam(deckIndex, 7, it) }
-            RotaryKnob3D("CRUNCH", vcfCrunch, false, Color(0xFFFCC934), Modifier.weight(1f)) { vcfCrunch = it; repo.nativeSetChannelParam(deckIndex, 8, it) }
-            RotaryKnob3D("COLOR", colorFx, true, Color(0xFFF538A0), Modifier.weight(1f)) { colorFx = it; repo.nativeSetChannelParam(deckIndex, 6, it) }
-            RotaryKnob3D("FADER", fader, false, Color(0xFF57AB5A), Modifier.weight(1f)) { fader = it; repo.nativeSetChannelParam(deckIndex, 0, it) }
         }
     }
 }

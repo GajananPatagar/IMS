@@ -13,10 +13,10 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "4.0.0-Gemini4-Argon-OBB-Edition"
+        versionName = "8.0-Argon-Lightweight-OBB"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a")
         }
 
         externalNativeBuild {
@@ -25,10 +25,6 @@ android {
                 arguments += listOf("-DANDROID_STL=c++_shared")
             }
         }
-    }
-
-    androidResources {
-        noCompress += listOf("onnx", "ort", "obb", "wav", "flac")
     }
 
     signingConfigs {

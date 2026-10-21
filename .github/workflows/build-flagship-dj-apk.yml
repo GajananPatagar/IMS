@@ -1,4 +1,4 @@
-name: Build ApexDJ Argon Flagship Fat-APK & OBB
+name: Build ApexDJ Lightweight APK & Standalone OBB
 
 on:
   push:
@@ -12,7 +12,7 @@ jobs:
       - name: Checkout IMS Repository
         uses: actions/checkout@v4
 
-      - name: Free Runner Disk Space for Neural Models & OBB Expansion
+      - name: Free Runner Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/system-images /opt/ghc
           df -h
@@ -23,21 +23,19 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Vendor Signalsmith Stretch & Linear Dependencies
+      - name: Vendor Signalsmith Stretch & Linear Headers
         run: |
-          # Vendor signalsmith-stretch
           mkdir -p app/src/main/cpp/third_party/signalsmith-stretch
           git clone --depth 1 https://github.com/Signalsmith-Audio/signalsmith-stretch.git /tmp/signalsmith
           cp -r /tmp/signalsmith/* app/src/main/cpp/third_party/signalsmith-stretch/
-          
-          # Vendor signalsmith-linear (Required by signalsmith-stretch.h for stft.h)
+
           mkdir -p app/src/main/cpp/third_party/signalsmith-linear
           git clone --depth 1 https://github.com/Signalsmith-Audio/linear.git /tmp/linear
           cp -r /tmp/linear/* app/src/main/cpp/third_party/signalsmith-linear/
 
-      - name: Build Neural Models & PUBG/FreeFire Style .OBB Expansion File
+      - name: Build Standalone PUBG/FreeFire Style .OBB Expansion File (Keep APK Lightweight!)
         run: |
-          mkdir -p app/src/main/assets/models
+          rm -rf app/src/main/assets/models
           mkdir -p obb_staging/models
           mkdir -p obb_staging/club_samples
           python3 -m pip install --upgrade pip huggingface_hub numpy
@@ -45,27 +43,21 @@ jobs:
           import os, wave, struct, math, zipfile
           from huggingface_hub import hf_hub_download
 
-          assets_dir = "app/src/main/assets/models"
           obb_models = "obb_staging/models"
           obb_samples = "obb_staging/club_samples"
-          os.makedirs(assets_dir, exist_ok=True)
           os.makedirs(obb_models, exist_ok=True)
           os.makedirs(obb_samples, exist_ok=True)
 
+          # Download HT-Demucs FT 4-Stem ONNX Models ONLY into OBB staging (NOT inside APK assets!)
           stems = ["drums", "bass", "other", "vocals"]
           for stem in stems:
               repo_id = f"StemSplitio/htdemucs-ft-{stem}-onnx"
               filename = f"htdemucs_ft_{stem}.onnx"
-              target_asset = os.path.join(assets_dir, filename)
               try:
-                  print(f"Fetching {repo_id}/{filename}...")
-                  p = hf_hub_download(repo_id=repo_id, filename=filename, local_dir=assets_dir)
-                  with open(p, "rb") as src, open(os.path.join(obb_models, filename), "wb") as dst:
-                      dst.write(src.read())
+                  print(f"Fetching {repo_id}/{filename} into OBB staging...")
+                  hf_hub_download(repo_id=repo_id, filename=filename, local_dir=obb_models)
               except Exception as e:
-                  print(f"Fallback weight header for {filename}: {e}")
-                  with open(target_asset, "wb") as f:
-                      f.write(b"ONNX_ARGON_NEURAL_WEIGHTS")
+                  print(f"Writing fallback header for {filename}: {e}")
                   with open(os.path.join(obb_models, filename), "wb") as f:
                       f.write(b"ONNX_ARGON_NEURAL_WEIGHTS")
 
@@ -83,7 +75,7 @@ jobs:
           horn = [math.tanh(2.5 * (math.sin(2*math.pi*440*t/sr) + 0.6*math.sin(2*math.pi*554.37*t/sr) + 0.5*math.sin(2*math.pi*659.25*t/sr))) * (1.0 - t/(sr*1.5)) for t in range(int(sr*1.5))]
           save_wav("festival_airhorn.wav", horn)
 
-          sub_drop = [math.sin(2*math.pi*(110.0 * math.pow(0.25, t/(sr*2.0)))*t/sr) * (1.0 - t/(sr*2.0)) for t in range(int(sr*2.0))]
+          sub_drop = [math.sin(2*math.pi*(110.0 * math.pow(0.25, t/(sr*2.0)))*t/sr) * (1.0 - t/(sr*2.0))]
           save_wav("sub_808_drop.wav", sub_drop)
 
           obb_filename = "main.1.com.apexdj.butter.obb"
@@ -93,7 +85,7 @@ jobs:
                       full_path = os.path.join(root, file)
                       rel_path = os.path.relpath(full_path, "obb_staging")
                       zf.write(full_path, rel_path)
-          print("Created OBB Expansion Pack:", obb_filename, os.path.getsize(obb_filename), "bytes")
+          print("Standalone OBB Expansion Pack created:", obb_filename, os.path.getsize(obb_filename), "bytes")
           PYEOF
 
       - name: Extract ONNX Runtime Native C++ Headers & Shared Libraries
@@ -102,7 +94,7 @@ jobs:
           curl -L https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.20.0/onnxruntime-android-1.20.0.aar -o /tmp/ort.aar
           unzip -q /tmp/ort.aar -d app/src/main/cpp/third_party/onnxruntime
 
-      - name: Compile Signed Release Fat-APK with Gradle 8.9
+      - name: Compile Lightweight Signed Release APK with Gradle 8.9
         run: |
           gradle wrapper --gradle-version 8.9
           chmod +x ./gradlew
@@ -112,8 +104,9 @@ jobs:
           export ANDROID_KEY_ALIAS="apexdj"
           export ANDROID_KEY_PASSWORD="apexdj123"
           ./gradlew assembleRelease --no-daemon --stacktrace
+          ls -lh app/build/outputs/apk/release/
 
-      - name: Upload Flagship APK & OBB Expansion Pack Artifacts
+      - name: Upload Lightweight APK & Standalone OBB Expansion Pack
         uses: actions/upload-artifact@v4
         with:
           name: ApexDJ-Flagship-1Crore-Edition-APK

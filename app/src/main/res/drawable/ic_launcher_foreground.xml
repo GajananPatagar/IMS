@@ -4,28 +4,25 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Outer Neon Cyan Platter Ring -->
+    <!-- Outer Cyan CDJ Jogwheel Ring -->
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#00F0FF"
-        android:strokeWidth="3.5"
-        android:pathData="M54,22A32,32 0,1 1,53.9 22Z" />
-    <!-- Mid Gold Harmonic Ring -->
+        android:strokeColor="#00E5FF"
+        android:strokeWidth="4"
+        android:pathData="M54,24A30,30 0 1,1 53.9,24Z" />
+    <!-- Inner Gold Euphonia Halo -->
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFC400"
-        android:strokeWidth="2.2"
-        android:pathData="M54,31A23,23 0,1 1,53.9 31Z" />
-    <!-- Inner Crimson Sub-Bass Core -->
+        android:strokeColor="#FCC934"
+        android:strokeWidth="3"
+        android:pathData="M54,34A20,20 0 1,1 53.9,34Z" />
+    <!-- Center Spindle & Stylus Arm -->
     <path
-        android:fillColor="#FF1744"
-        android:pathData="M54,44A10,10 0,1 1,53.9 44Z" />
-    <!-- Center Spindle -->
+        android:fillColor="#F538A0"
+        android:pathData="M54,47A7,7 0 1,1 53.9,47Z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,51A3,3 0,1 1,53.9 51Z" />
-    <!-- Neural Waveform Pulse Bars -->
-    <path
-        android:fillColor="#00E676"
-        android:pathData="M36,52h3v4h-3zM41,48h3v12h-3zM64,48h3v12h-3zM69,52h3v4h-3z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:pathData="M76,28L76,62L64,74" />
 </vector>
