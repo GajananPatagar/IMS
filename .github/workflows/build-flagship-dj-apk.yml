@@ -48,13 +48,12 @@ jobs:
           os.makedirs(obb_models, exist_ok=True)
           os.makedirs(obb_samples, exist_ok=True)
 
-          # Download HT-Demucs FT 4-Stem ONNX Models ONLY into OBB staging (NOT inside APK assets!)
           stems = ["drums", "bass", "other", "vocals"]
           for stem in stems:
               repo_id = f"StemSplitio/htdemucs-ft-{stem}-onnx"
               filename = f"htdemucs_ft_{stem}.onnx"
               try:
-                  print(f"Fetching {repo_id}/{filename} into OBB staging...")
+                  print(f"Fetching {repo_id}/{filename} into OBB staging[span_0](start_span)[span_0](end_span)[span_1](start_span)[span_1](end_span)...")
                   hf_hub_download(repo_id=repo_id, filename=filename, local_dir=obb_models)
               except Exception as e:
                   print(f"Writing fallback header for {filename}: {e}")
@@ -75,7 +74,7 @@ jobs:
           horn = [math.tanh(2.5 * (math.sin(2*math.pi*440*t/sr) + 0.6*math.sin(2*math.pi*554.37*t/sr) + 0.5*math.sin(2*math.pi*659.25*t/sr))) * (1.0 - t/(sr*1.5)) for t in range(int(sr*1.5))]
           save_wav("festival_airhorn.wav", horn)
 
-          sub_drop = [math.sin(2*math.pi*(110.0 * math.pow(0.25, t/(sr*2.0)))*t/sr) * (1.0 - t/(sr*2.0))]
+          sub_drop = [math.sin(2*math.pi*(110.0 * math.pow(0.25, t/(sr*2.0)))*t/sr) * (1.0 - t/(sr*2.0)) for t in range(int(sr*2.0))]
           save_wav("sub_808_drop.wav", sub_drop)
 
           obb_filename = "main.1.com.apexdj.butter.obb"
