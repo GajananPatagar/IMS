@@ -19,19 +19,17 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
         lifecycleScope.launch {
-            repository.obbManager.autoScanCopyAndMountObb()
+            repository.obbManager.scanAndVerifyExistingObb()
+            repository.refreshInAppLocalSongs()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Ensure UI respects Android top notification bar & navigation bar!
         WindowCompat.setDecorFitsSystemWindows(window, true)
 
         repository = OnlineAndLocalRepository(applicationContext)
 
-        // Request audio/storage permissions so autoScanCopyAndMountObb can read Download/ApexDJ_Build automatically
         val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             arrayOf(Manifest.permission.READ_MEDIA_AUDIO)
         } else {

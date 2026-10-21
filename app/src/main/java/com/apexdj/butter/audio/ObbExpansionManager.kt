@@ -1,238 +1,271 @@
 package com.apexdj.butter.audio
 
 import android.content.Context
-import android.net.Uri
 import android.os.Environment
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.util.concurrent.TimeUnit
-import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
-import java.util.zip.ZipOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
-data class ObbStatus(
-    val isMounted: Boolean,
+enum class ObbDownloadState {
+    NOT_DOWNLOADED,
+    DOWNLOADING,
+    PAUSED,
+    ALREADY_DOWNLOADED,
+    ERROR
+}
+
+data class ObbVaultProgress(
+    val state: ObbDownloadState,
+    val downloadedBytes: Long,
+    val totalBytes: Long,
+    val percent: Int,
+    val speedMbps: Float,
     val obbFilePath: String,
-    val obbSizeMb: Double,
-    val modelsDir: String,
-    val samplesDir: String,
-    val irsDir: String,
-    val verifiedStemsCount: Int,
-    val statusMessage: String
+    val message: String
 )
 
-class ObbExpansionManager(private val context: Context) {
-
+class ObbExpansionManager(
+    private val context: Context,
+    private val onMountObbNative: (String) -> Boolean
+) {
     companion object {
         const val OBB_FILENAME = "main.1.com.apexdj.butter.obb"
+        const val MIN_VALID_OBB_BYTES = 1_400_000_000L // 1.40 GB strict minimum
+        const val EXPECTED_OBB_BYTES  = 1_610_612_736L // 1.50 GB (1,536 MiB)
         const val GITHUB_OBB_RELEASE_URL =
-            "https://github.com/GajananPatagar/IMS/releases/download/final-obb-vault-v1/main.1.com.apexdj.butter.obb"
-
-        val STEM_MODELS = listOf(
-            "htdemucs_ft_drums.onnx",
-            "htdemucs_ft_bass.onnx",
-            "htdemucs_ft_other.onnx",
-            "htdemucs_ft_vocals.onnx"
-        )
+            "https://github.com/GajananPatagar/IMS/releases/download/final-obb-vault-v12/main.1.com.apexdj.butter.obb"
     }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var downloadJob: Job? = null
+    private val pauseRequested = AtomicBoolean(false)
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
 
-    /**
-     * Fast-boot OBB verifier & auto-copier:
-     * 1. Checks if /Android/obb/com.apexdj.butter/main.1.com.apexdj.butter.obb is already mounted & verified.
-     * 2. Scans Download/ApexDJ_Build, Download, and SDCard to auto-copy any newly downloaded .obb file.
-     * 3. Extracts ONNX models, 16 club WAV samples, and 6 reverb IRs once, then locks the verification stamp.
-     */
-    suspend fun autoScanCopyAndMountObb(): ObbStatus = withContext(Dispatchers.IO) {
-        val officialObbDir = context.obbDir ?: File(context.filesDir, "obb")
-        if (!officialObbDir.exists()) officialObbDir.mkdirs()
-        val officialObbFile = File(officialObbDir, OBB_FILENAME)
+    private val _progressFlow = MutableStateFlow(
+        ObbVaultProgress(
+            state = ObbDownloadState.NOT_DOWNLOADED,
+            downloadedBytes = 0L,
+            totalBytes = EXPECTED_OBB_BYTES,
+            percent = 0,
+            speedMbps = 0f,
+            obbFilePath = "",
+            message = "Checking 1.50 GB Neural Brain OBB..."
+        )
+    )
+    val progressFlow: StateFlow<ObbVaultProgress> = _progressFlow
 
-        val modelsOutDir = File(context.filesDir, "models").apply { mkdirs() }
-        val samplesOutDir = File(context.filesDir, "club_samples").apply { mkdirs() }
-        val irsOutDir = File(context.filesDir, "impulse_responses").apply { mkdirs() }
-        val verifiedStamp = File(context.filesDir, ".v10_vault_verified")
+    fun getOfficialObbFile(): File {
+        val dir = context.obbDir ?: File(context.filesDir, "obb")
+        if (!dir.exists()) dir.mkdirs()
+        return File(dir, OBB_FILENAME)
+    }
 
+    private fun getPartFile(): File = File(getOfficialObbFile().parentFile, "$OBB_FILENAME.part")
+
+    suspend fun scanAndVerifyExistingObb(): Boolean = withContext(Dispatchers.IO) {
+        val official = getOfficialObbFile()
         val extRoot = Environment.getExternalStorageDirectory()
-        val searchLocations = listOf(
+
+        val candidates = listOf(
+            official,
+            File(extRoot, "Android/obb/${context.packageName}/$OBB_FILENAME"),
             File(extRoot, "Download/ApexDJ_Build/$OBB_FILENAME"),
             File(extRoot, "Download/$OBB_FILENAME"),
-            File(extRoot, "ApexDJ_Build/$OBB_FILENAME"),
-            File(extRoot, OBB_FILENAME),
             File("/sdcard/Download/ApexDJ_Build/$OBB_FILENAME"),
-            File("/sdcard/Download/$OBB_FILENAME"),
-            File(extRoot, "Android/obb/${context.packageName}/$OBB_FILENAME")
+            File("/sdcard/Download/$OBB_FILENAME")
         )
 
-        val discoveredExternalObb = searchLocations.firstOrNull {
-            it.exists() && it.canRead() && it.length() > 1024L && it.absolutePath != officialObbFile.absolutePath
-        }
-
-        var autoCopied = false
-        if (discoveredExternalObb != null) {
-            if (!officialObbFile.exists() || officialObbFile.length() != discoveredExternalObb.length()) {
+        val validFound = candidates.firstOrNull { it.exists() && it.canRead() && it.length() >= MIN_VALID_OBB_BYTES }
+        if (validFound != null) {
+            if (validFound.absolutePath != official.absolutePath) {
                 runCatching {
-                    discoveredExternalObb.inputStream().use { input ->
-                        FileOutputStream(officialObbFile).use { output ->
-                            input.copyTo(output, bufferSize = 256 * 1024)
-                        }
-                    }
-                    verifiedStamp.delete()
-                    autoCopied = true
-                }
-            }
-        }
-
-        // Fast-path: If already extracted and verified for this exact OBB size, boot in <50ms!
-        val expectedStamp = "${officialObbFile.length()}_v10"
-        val isAlreadyVerified = verifiedStamp.exists() &&
-            runCatching { verifiedStamp.readText() == expectedStamp }.getOrDefault(false) &&
-            STEM_MODELS.all { File(modelsOutDir, it).exists() }
-
-        if (!isAlreadyVerified && officialObbFile.exists() && officialObbFile.length() > 100L) {
-            extractObbZipArchive(officialObbFile, modelsOutDir, samplesOutDir, irsOutDir)
-            runCatching { verifiedStamp.writeText(expectedStamp) }
-        }
-
-        for (modelName in STEM_MODELS) {
-            val dest = File(modelsOutDir, modelName)
-            if (!dest.exists() || dest.length() == 0L) {
-                dest.writeBytes("ONNX_ARGON_V10_NEURAL_WEIGHTS".toByteArray())
-            }
-        }
-
-        if (!officialObbFile.exists() || officialObbFile.length() < 64L) {
-            runCatching {
-                ZipOutputStream(FileOutputStream(officialObbFile)).use { zos ->
-                    for (modelName in STEM_MODELS) {
-                        val src = File(modelsOutDir, modelName)
-                        if (src.exists()) {
-                            zos.putNextEntry(ZipEntry("models/$modelName"))
-                            src.inputStream().use { it.copyTo(zos) }
-                            zos.closeEntry()
+                    // Instant rename if on same mount, otherwise streamed buffered copy
+                    if (!validFound.renameTo(official)) {
+                        validFound.inputStream().use { input ->
+                            official.outputStream().use { output ->
+                                input.copyTo(output, 512 * 1024)
+                            }
                         }
                     }
                 }
-                verifiedStamp.writeText("${officialObbFile.length()}_v10")
+            }
+            val target = if (official.exists() && official.length() >= MIN_VALID_OBB_BYTES) official else validFound
+            val mounted = onMountObbNative(target.absolutePath)
+            if (mounted) {
+                _progressFlow.value = ObbVaultProgress(
+                    state = ObbDownloadState.ALREADY_DOWNLOADED,
+                    downloadedBytes = target.length(),
+                    totalBytes = target.length(),
+                    percent = 100,
+                    speedMbps = 0f,
+                    obbFilePath = target.absolutePath,
+                    message = "Already Downloaded (1.50 GB Neural Brain OBB Verified & Mounted)"
+                )
+                return@withContext true
             }
         }
 
-        val sizeMb = (officialObbFile.length().toDouble() / (1024.0 * 1024.0)).coerceAtLeast(0.1)
-        val verifiedCount = STEM_MODELS.count { File(modelsOutDir, it).exists() }
-        val prefix = if (autoCopied) "Final OBB Auto-Copied & Locked" else "Final OBB Vault Active"
-
-        ObbStatus(
-            isMounted = true,
-            obbFilePath = officialObbFile.absolutePath,
-            obbSizeMb = sizeMb,
-            modelsDir = modelsOutDir.absolutePath,
-            samplesDir = samplesOutDir.absolutePath,
-            irsDir = irsOutDir.absolutePath,
-            verifiedStemsCount = verifiedCount,
-            statusMessage = "$prefix (%.1f MB • $verifiedCount/4 Stems • Permanent Vault)".format(sizeMb)
+        val part = getPartFile()
+        val existingPartBytes = if (part.exists()) part.length() else 0L
+        val pct = ((existingPartBytes * 100L) / EXPECTED_OBB_BYTES).toInt().coerceIn(0, 99)
+        _progressFlow.value = ObbVaultProgress(
+            state = if (existingPartBytes > 0L) ObbDownloadState.PAUSED else ObbDownloadState.NOT_DOWNLOADED,
+            downloadedBytes = existingPartBytes,
+            totalBytes = EXPECTED_OBB_BYTES,
+            percent = pct,
+            speedMbps = 0f,
+            obbFilePath = official.absolutePath,
+            message = if (existingPartBytes > 0L) {
+                "Download Paused at $pct% (${existingPartBytes / (1024 * 1024)} MB / 1536 MB). Tap RESUME."
+            } else {
+                "1.50 GB Neural Brain OBB Required. App is locked until OBB is downloaded."
+            }
         )
+        false
     }
 
-    /**
-     * Downloads the Permanent Final OBB directly from GitHub Releases (final-obb-vault-v1)
-     * into /Android/obb/com.apexdj.butter/ if the user installs the 15MB APK on a new device.
-     */
-    suspend fun downloadFinalObbFromGitHubRelease(onProgress: (String) -> Unit): ObbStatus = withContext(Dispatchers.IO) {
-        val officialObbDir = context.obbDir ?: File(context.filesDir, "obb")
-        if (!officialObbDir.exists()) officialObbDir.mkdirs()
-        val officialObbFile = File(officialObbDir, OBB_FILENAME)
-        val tempFile = File(officialObbDir, "$OBB_FILENAME.part")
+    fun startOrResumeDownload() {
+        if (_progressFlow.value.state == ObbDownloadState.ALREADY_DOWNLOADED) return
+        if (downloadJob?.isActive == true) return
+        pauseRequested.set(false)
 
-        runCatching {
-            onProgress("Connecting to GitHub Release 'final-obb-vault-v1'...")
-            val req = Request.Builder().url(GITHUB_OBB_RELEASE_URL).build()
-            httpClient.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) error("Release HTTP ${resp.code}")
-                val body = resp.body ?: error("Empty OBB body")
-                val totalBytes = body.contentLength().coerceAtLeast(1L)
-                var downloaded = 0L
+        downloadJob = scope.launch {
+            val official = getOfficialObbFile()
+            if (official.exists() && official.length() >= MIN_VALID_OBB_BYTES) {
+                scanAndVerifyExistingObb()
+                return@launch
+            }
 
-                body.byteStream().use { input ->
-                    FileOutputStream(tempFile).use { output ->
+            val partFile = getPartFile()
+            var downloaded = if (partFile.exists()) partFile.length() else 0L
+
+            try {
+                _progressFlow.value = _progressFlow.value.copy(
+                    state = ObbDownloadState.DOWNLOADING,
+                    message = "Connecting to 1.50 GB OBB Vault..."
+                )
+
+                val reqBuilder = Request.Builder().url(GITHUB_OBB_RELEASE_URL)
+                if (downloaded > 0L) {
+                    reqBuilder.header("Range", "bytes=$downloaded-")
+                }
+
+                httpClient.newCall(reqBuilder.build()).execute().use { resp ->
+                    if (resp.code == 416) {
+                        // Range already satisfied -> file is complete!
+                        finalizePartFileInstant(partFile, official)
+                        return@use
+                    }
+                    if (!resp.isSuccessful && resp.code != 206) {
+                        error("Server returned HTTP ${resp.code}")
+                    }
+
+                    val isPartial = (resp.code == 206)
+                    if (!isPartial) downloaded = 0L
+
+                    val contentLen = resp.body?.contentLength() ?: EXPECTED_OBB_BYTES
+                    val totalTarget = if (isPartial && contentLen > 0) downloaded + contentLen else maxOf(contentLen, EXPECTED_OBB_BYTES)
+
+                    RandomAccessFile(partFile, "rw").use { raf ->
+                        raf.seek(downloaded)
+                        val bodyStream = resp.body?.byteStream() ?: error("Empty stream")
                         val buf = ByteArray(256 * 1024)
-                        var lastReport = 0L
-                        while (true) {
-                            val read = input.read(buf)
-                            if (read <= 0) break
-                            output.write(buf, 0, read)
-                            downloaded += read
-                            if (downloaded - lastReport > 2 * 1024 * 1024) {
-                                lastReport = downloaded
-                                val pct = ((downloaded * 100L) / totalBytes).coerceIn(0L, 100L)
-                                onProgress("Downloading Final OBB Vault: $pct% (${downloaded / (1024 * 1024)} MB)")
+                        var lastTime = System.currentTimeMillis()
+                        var bytesSinceLast = 0L
+
+                        bodyStream.use { input ->
+                            while (isActive && !pauseRequested.get()) {
+                                val read = input.read(buf)
+                                if (read == -1) break
+                                raf.write(buf, 0, read)
+                                downloaded += read
+                                bytesSinceLast += read
+
+                                val now = System.currentTimeMillis()
+                                val elapsedMs = now - lastTime
+                                if (elapsedMs >= 250) {
+                                    val mbps = (bytesSinceLast.toFloat() / (1024f * 1024f)) / (elapsedMs.toFloat() / 1000f)
+                                    val pct = ((downloaded * 100L) / totalTarget).toInt().coerceIn(0, 99)
+                                    _progressFlow.value = ObbVaultProgress(
+                                        state = ObbDownloadState.DOWNLOADING,
+                                        downloadedBytes = downloaded,
+                                        totalBytes = totalTarget,
+                                        percent = pct,
+                                        speedMbps = mbps,
+                                        obbFilePath = official.absolutePath,
+                                        message = "Downloading 1.50 GB OBB: $pct% (${downloaded / (1024 * 1024)} / ${totalTarget / (1024 * 1024)} MB • %.1f MB/s)".format(mbps)
+                                    )
+                                    lastTime = now
+                                    bytesSinceLast = 0L
+                                }
                             }
                         }
                     }
+
+                    if (pauseRequested.get()) {
+                        val pct = ((downloaded * 100L) / EXPECTED_OBB_BYTES).toInt().coerceIn(0, 99)
+                        _progressFlow.value = _progressFlow.value.copy(
+                            state = ObbDownloadState.PAUSED,
+                            downloadedBytes = downloaded,
+                            percent = pct,
+                            speedMbps = 0f,
+                            message = "Paused at $pct% (${downloaded / (1024 * 1024)} MB). Tap RESUME to continue."
+                        )
+                        return@launch
+                    }
+
+                    finalizePartFileInstant(partFile, official)
                 }
-            }
-            if (tempFile.exists() && tempFile.length() > 1024L) {
-                tempFile.copyTo(officialObbFile, overwrite = true)
-                tempFile.delete()
-                File(context.filesDir, ".v10_vault_verified").delete()
+            } catch (e: Throwable) {
+                val pct = ((downloaded * 100L) / EXPECTED_OBB_BYTES).toInt().coerceIn(0, 99)
+                _progressFlow.value = _progressFlow.value.copy(
+                    state = ObbDownloadState.PAUSED,
+                    downloadedBytes = downloaded,
+                    percent = pct,
+                    speedMbps = 0f,
+                    message = "Network interrupted at $pct% (${e.localizedMessage ?: "Retry"}). Tap RESUME."
+                )
             }
         }
-        autoScanCopyAndMountObb()
     }
 
-    suspend fun importAndCopyObbFromUri(uri: Uri): ObbStatus = withContext(Dispatchers.IO) {
-        val officialObbDir = context.obbDir ?: File(context.filesDir, "obb")
-        if (!officialObbDir.exists()) officialObbDir.mkdirs()
-        val officialObbFile = File(officialObbDir, OBB_FILENAME)
-
-        runCatching {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(officialObbFile).use { output ->
-                    input.copyTo(output, bufferSize = 256 * 1024)
-                }
-            }
-            File(context.filesDir, ".v10_vault_verified").delete()
-        }
-        autoScanCopyAndMountObb()
+    fun pauseDownload() {
+        pauseRequested.set(true)
     }
 
-    private fun extractObbZipArchive(
-        obbFile: File,
-        modelsOutDir: File,
-        samplesOutDir: File,
-        irsOutDir: File
-    ) {
-        runCatching {
-            ZipFile(obbFile).use { zip ->
-                val entries = zip.entries()
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    if (entry.isDirectory) continue
-                    val targetFile = when {
-                        entry.name.startsWith("models/") -> File(modelsOutDir, entry.name.removePrefix("models/"))
-                        entry.name.startsWith("club_samples/") -> File(samplesOutDir, entry.name.removePrefix("club_samples/"))
-                        entry.name.startsWith("impulse_responses/") -> File(irsOutDir, entry.name.removePrefix("impulse_responses/"))
-                        else -> File(context.filesDir, entry.name)
-                    }
-                    targetFile.parentFile?.mkdirs()
-                    if (!targetFile.exists() || targetFile.length() != entry.size) {
-                        zip.getInputStream(entry).use { input ->
-                            FileOutputStream(targetFile).use { output ->
-                                input.copyTo(output, bufferSize = 256 * 1024)
-                            }
-                        }
-                    }
-                }
-            }
+    // Fixes the 99% freeze bug by performing an instant 0ms filesystem renameTo() in the same directory!
+    private fun finalizePartFileInstant(partFile: File, official: File) {
+        if (official.exists()) official.delete()
+        val renamed = partFile.renameTo(official)
+        val finalFile = if (renamed) official else partFile
+        val mounted = onMountObbNative(finalFile.absolutePath)
+        if (mounted) {
+            _progressFlow.value = ObbVaultProgress(
+                state = ObbDownloadState.ALREADY_DOWNLOADED,
+                downloadedBytes = finalFile.length(),
+                totalBytes = finalFile.length(),
+                percent = 100,
+                speedMbps = 0f,
+                obbFilePath = finalFile.absolutePath,
+                message = "Already Downloaded (1.50 GB Neural Brain OBB Verified & Active)"
+            )
+        } else {
+            _progressFlow.value = _progressFlow.value.copy(
+                state = ObbDownloadState.ERROR,
+                message = "OBB downloaded (${finalFile.length() / (1024 * 1024)} MB) but failed 1.40 GB verification."
+            )
         }
     }
 }

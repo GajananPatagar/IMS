@@ -23,12 +23,79 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.*
 
+enum class AppThemeMode(val title: String) {
+    DARK("DARK"),
+    LIGHT("LIGHT"),
+    GLASSMORPHISM("GLASS"),
+    NEON_CYAN("NEON CYAN")
+}
+
+data class ApexThemePalette(
+    val bgPrimary: Color,
+    val cardSurface: Color,
+    val cardBorder: Color,
+    val textPrimary: Color,
+    val textSecondary: Color,
+    val accentA: Color,
+    val accentB: Color,
+    val accentBgm: Color,
+    val knobSurface: Color
+)
+
+fun getThemePalette(mode: AppThemeMode): ApexThemePalette = when (mode) {
+    AppThemeMode.LIGHT -> ApexThemePalette(
+        bgPrimary = Color(0xFFF2F5F9),
+        cardSurface = Color(0xFFFFFFFF),
+        cardBorder = Color(0xFFD0D8E4),
+        textPrimary = Color(0xFF0F172A),
+        textSecondary = Color(0xFF475569),
+        accentA = Color(0xFF0284C7),
+        accentB = Color(0xFFEA580C),
+        accentBgm = Color(0xFF7C3AED),
+        knobSurface = Color(0xFFE2E8F0)
+    )
+    AppThemeMode.DARK -> ApexThemePalette(
+        bgPrimary = Color(0xFF07090E),
+        cardSurface = Color(0xFF10141E),
+        cardBorder = Color(0xFF222A3A),
+        textPrimary = Color(0xFFF0F6FC),
+        textSecondary = Color(0xFF8B949E),
+        accentA = Color(0xFF00E5FF),
+        accentB = Color(0xFFFA903E),
+        accentBgm = Color(0xFFC084FC),
+        knobSurface = Color(0xFF090C12)
+    )
+    AppThemeMode.GLASSMORPHISM -> ApexThemePalette(
+        bgPrimary = Color(0xFF0B1120),
+        cardSurface = Color(0x991E293B),
+        cardBorder = Color(0x8894A3B8),
+        textPrimary = Color(0xFFF8FAFC),
+        textSecondary = Color(0xFFCBD5E1),
+        accentA = Color(0xFF38BDF8),
+        accentB = Color(0xFFF472B6),
+        accentBgm = Color(0xFF34D399),
+        knobSurface = Color(0xAA0F172A)
+    )
+    AppThemeMode.NEON_CYAN -> ApexThemePalette(
+        bgPrimary = Color(0xFF02080D),
+        cardSurface = Color(0xFF05131E),
+        cardBorder = Color(0xFF00E5FF),
+        textPrimary = Color(0xFFE0FFFF),
+        textSecondary = Color(0xFF00B8D4),
+        accentA = Color(0xFF00E5FF),
+        accentB = Color(0xFFFF007F),
+        accentBgm = Color(0xFF00FF9D),
+        knobSurface = Color(0xFF030B12)
+    )
+}
+
 @Composable
 fun RotaryKnob3D(
     label: String,
     value: Float,
     isBipolar: Boolean = true,
     accentColor: Color = Color(0xFF00E5FF),
+    palette: ApexThemePalette,
     modifier: Modifier = Modifier,
     onChange: (Float) -> Unit
 ) {
@@ -37,18 +104,18 @@ fun RotaryKnob3D(
     Column(modifier = modifier.padding(1.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = label,
-            color = Color(0xFF9EABB8),
+            color = palette.textSecondary,
             fontSize = 7.sp,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             maxLines = 1
         )
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(1.dp))
         Box(
             modifier = Modifier
-                .size(36.dp)
-                .background(Color(0xFF0B0E16), CircleShape)
-                .border(1.5.dp, accentColor.copy(alpha = 0.65f), CircleShape)
+                .size(34.dp)
+                .background(palette.knobSurface, CircleShape)
+                .border(1.5.dp, accentColor.copy(alpha = 0.7f), CircleShape)
                 .pointerInput(isBipolar) {
                     detectTapGestures(
                         onDoubleTap = {
@@ -71,7 +138,7 @@ fun RotaryKnob3D(
                 },
             contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.size(30.dp)) {
+            Canvas(modifier = Modifier.size(28.dp)) {
                 val radius = size.minDimension / 2.2f
                 val center = Offset(size.width / 2f, size.height / 2f)
                 val angleRange = 240f
@@ -97,7 +164,7 @@ fun RotaryKnob3D(
                 val rad = Math.toRadians(currentAngle.toDouble())
                 val indicatorX = center.x + (radius * 0.72f) * cos(rad).toFloat()
                 val indicatorY = center.y + (radius * 0.72f) * sin(rad).toFloat()
-                drawCircle(color = Color.White, radius = 3.2f, center = Offset(indicatorX, indicatorY))
+                drawCircle(color = palette.textPrimary, radius = 3.0f, center = Offset(indicatorX, indicatorY))
             }
         }
     }
@@ -108,13 +175,14 @@ fun RgbScrollingWaveformView(
     rgbFlatArray: FloatArray,
     playheadNormalized: Float,
     accentColor: Color,
+    palette: ApexThemePalette,
     modifier: Modifier = Modifier,
     onSeek: (Float) -> Unit = {}
 ) {
     Box(
         modifier = modifier
-            .background(Color(0xFF05070B), RoundedCornerShape(4.dp))
-            .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
+            .background(palette.knobSurface, RoundedCornerShape(4.dp))
+            .border(1.dp, accentColor.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
                     if (size.width > 0) {
@@ -160,7 +228,7 @@ fun RgbScrollingWaveformView(
 
             val playX = (playheadNormalized.coerceIn(0f, 1f)) * w
             drawLine(
-                color = Color.White,
+                color = palette.textPrimary,
                 start = Offset(playX, 0f),
                 end = Offset(playX, h),
                 strokeWidth = 2.5f
@@ -173,29 +241,31 @@ fun RgbScrollingWaveformView(
 fun MasterSpectrumAnalyzer(
     vuA: Float,
     vuB: Float,
+    vuBgm: Float,
+    palette: ApexThemePalette,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
-            .background(Color(0xFF05070B), RoundedCornerShape(4.dp))
-            .border(1.dp, Color(0xFF21262D), RoundedCornerShape(4.dp))
+            .background(palette.knobSurface, RoundedCornerShape(4.dp))
+            .border(1.dp, palette.cardBorder, RoundedCornerShape(4.dp))
             .padding(3.dp)
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val count = 24
+            val count = 28
             val barW = w / count.toFloat()
-            val energy = ((vuA + vuB) * 0.65f).coerceIn(0.05f, 1.0f)
+            val energy = ((vuA + vuB + vuBgm * 0.7f) * 0.55f).coerceIn(0.04f, 1.0f)
 
             for (i in 0 until count) {
                 val shape = sin(PI * (i + 1) / (count + 1)).toFloat()
-                val amp = (energy * (0.45f + 0.55f * shape)).coerceIn(0.05f, 1.0f)
+                val amp = (energy * (0.4f + 0.6f * shape)).coerceIn(0.04f, 1.0f)
                 val barH = amp * h
                 val barColor = when {
-                    i < 8 -> Color(0xFF00E5FF)
-                    i < 16 -> Color(0xFF57AB5A)
-                    else -> Color(0xFFFCC934)
+                    i < 9 -> palette.accentA
+                    i < 19 -> palette.accentBgm
+                    else -> palette.accentB
                 }
                 drawRect(
                     color = barColor,

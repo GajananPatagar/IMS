@@ -1,16 +1,16 @@
 package com.apexdj.butter.audio
 
+import android.content.ContentUris
 import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
-import android.provider.OpenableColumns
+import android.os.Environment
+import android.provider.MediaStore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -19,9 +19,11 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.URLEncoder
 import java.nio.ByteOrder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import kotlin.math.*
 
 data class SongTrack(
     val id: String,
@@ -29,134 +31,55 @@ data class SongTrack(
     val artist: String,
     val durationSec: Int,
     val streamUrl: String,
-    val sourceBadge: String = "CLUB REMIX",
-    val estBpm: Int = 128,
+    val sourceBadge: String,
+    val estBpm: Int = 124,
     val isLocal: Boolean = false,
     val localUri: Uri? = null
 )
 
-data class ArgonAiRecommendation(
-    val compatibilityScore: Int,
-    val harmonicRelation: String,
-    val recommendedStyleId: Int,
-    val recommendedStyleName: String,
-    val pitchAdjustSemitones: Float,
-    val summaryText: String
-)
-
 class OnlineAndLocalRepository(private val context: Context) {
 
-    val obbManager = ObbExpansionManager(context)
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     private val deckLoadJobs = ConcurrentHashMap<Int, Job>()
-    private val deckDecodeMutex = Array(6) { Mutex() }
 
+    val obbManager = ObbExpansionManager(context) { obbPath ->
+        val ok = nativeMountObbBrain(obbPath)
+        _obbBrainMounted.value = ok
+        ok
+    }
+
+    private val _obbBrainMounted = MutableStateFlow(false)
+    val obbBrainMounted: StateFlow<Boolean> = _obbBrainMounted
+
+    // 3 Decks: 0 = Deck A, 1 = Deck B, 2 = Background Deck (Continuous BGM/Groove)
     private val _waveDeckA = MutableStateFlow(FloatArray(256 * 3))
     val waveDeckA: StateFlow<FloatArray> = _waveDeckA
 
     private val _waveDeckB = MutableStateFlow(FloatArray(256 * 3))
     val waveDeckB: StateFlow<FloatArray> = _waveDeckB
 
-    private val _trackTitleDeckA = MutableStateFlow("Bollywood 808 Electro Anthem (128 BPM)")
-    val trackTitleDeckA: StateFlow<String> = _trackTitleDeckA
+    private val _waveDeckBgm = MutableStateFlow(FloatArray(256 * 3))
+    val waveDeckBgm: StateFlow<FloatArray> = _waveDeckBgm
 
-    private val _trackTitleDeckB = MutableStateFlow("Tomorrowland Mainstage Drop (130 BPM)")
-    val trackTitleDeckB: StateFlow<String> = _trackTitleDeckB
+    private val _titleDeckA = MutableStateFlow("Deck A — Tap Any Song Below to Load (0ms)")
+    val titleDeckA: StateFlow<String> = _titleDeckA
 
-    // 24/7 Autonomous AI Auto-DJ Radio Queue State
-    private val _autoDjEnabled = MutableStateFlow(false)
-    val autoDjEnabled: StateFlow<Boolean> = _autoDjEnabled
-    private var autoDjPlaylist: List<SongTrack> = emptyList()
-    private var autoDjQueueCursor = 0
+    private val _titleDeckB = MutableStateFlow("Deck B — Tap Any Song Below to Load (0ms)")
+    val titleDeckB: StateFlow<String> = _titleDeckB
 
-    @Volatile
-    var cachedModelsDir: String = File(context.filesDir, "models").absolutePath
-        private set
+    private val _titleDeckBgm = MutableStateFlow("Background Deck — Load BGM / Groove Track")
+    val titleDeckBgm: StateFlow<String> = _titleDeckBgm
 
-    companion object {
-        val AI_MORPH_STYLE_NAMES = listOf(
-            "01. Cosine 4-Stem Weave",
-            "02. Mainstage Mobius Drop Swap",
-            "03. Berlin Techno Dual VCF Crunch",
-            "04. Bollywood 808 Sub-Bass Flip",
-            "05. Euphonia Neve Silk Glide",
-            "06. Acapella Vocal Mashup Bridge",
-            "07. Turntable Spinback Whip",
-            "08. Polyrhythmic Spiral Roll",
-            "09. Dub Echo Vocal Freeze",
-            "10. Camelot Fifth Key Bridge",
-            "11. Stem Call & Response Gate",
-            "12. Velvet Long Rotary Blend"
-        )
-    }
+    private val _localDeviceSongs = MutableStateFlow<List<SongTrack>>(emptyList())
+    val localDeviceSongs: StateFlow<List<SongTrack>> = _localDeviceSongs
 
     init {
         System.loadLibrary("apexdj_engine")
         nativeInitEngine()
-        autoDjPlaylist = getBuiltInClubRemixCrate()
-
+        // Zero automatic sample playback on boot! Only verify OBB and scan local MediaStore songs.
         repoScope.launch {
-            val status = obbManager.autoScanCopyAndMountObb()
-            cachedModelsDir = status.modelsDir
-
-            val crate = getBuiltInClubRemixCrate()
-            val (lA, rA, srA) = generateProceduralClubRemixPcm(128f, 0)
-            nativeLoadPcmToDeck(0, lA, rA, srA, cachedModelsDir)
-            _waveDeckA.value = nativeGetRgbWaveform(0)
-            _trackTitleDeckA.value = crate[0].title
-
-            val (lB, rB, srB) = generateProceduralClubRemixPcm(130f, 2)
-            nativeLoadPcmToDeck(1, lB, rB, srB, cachedModelsDir)
-            _waveDeckB.value = nativeGetRgbWaveform(1)
-            _trackTitleDeckB.value = crate[2].title
-        }
-
-        // 24/7 Autonomous AI Auto-DJ Supervisor Loop
-        repoScope.launch {
-            while (isActive) {
-                delay(1200)
-                if (_autoDjEnabled.value && nativeGetMorphProgress() < 0f) {
-                    val playingA = nativeGetDeckPlayState(0)
-                    val playingB = nativeGetDeckPlayState(1)
-                    val posA = nativeGetPlayheadNormalized(0)
-                    val posB = nativeGetPlayheadNormalized(1)
-
-                    if (playingA && posA > 0.80f) {
-                        triggerNextAutoDjTransition(fromDeck = 0, toDeck = 1)
-                    } else if (playingB && posB > 0.80f) {
-                        triggerNextAutoDjTransition(fromDeck = 1, toDeck = 0)
-                    } else if (!playingA && !playingB) {
-                        nativeSetDeckPlayState(0, true)
-                    }
-                }
-            }
-        }
-    }
-
-    fun setAutoDjMode(enabled: Boolean) {
-        _autoDjEnabled.value = enabled
-        if (enabled && !nativeGetDeckPlayState(0) && !nativeGetDeckPlayState(1)) {
-            nativeSetDeckPlayState(0, true)
-        }
-    }
-
-    private fun triggerNextAutoDjTransition(fromDeck: Int, toDeck: Int) {
-        val bpmA = nativeGetDetectedBpm(0)
-        val keyA = nativeGetCamelotKey(0)
-        val bpmB = nativeGetDetectedBpm(1)
-        val keyB = nativeGetCamelotKey(1)
-        val rec = computeArgonAiRecommendation(bpmA, keyA, bpmB, keyB)
-        nativeTriggerButterMorph(fromDeck, toDeck, 14.0, rec.recommendedStyleId)
-
-        // Pre-cue next track after transition finishes
-        repoScope.launch {
-            delay(15500)
-            if (_autoDjEnabled.value && autoDjPlaylist.isNotEmpty()) {
-                autoDjQueueCursor = (autoDjQueueCursor + 1) % autoDjPlaylist.size
-                val nextTrack = autoDjPlaylist[autoDjQueueCursor]
-                loadTrackIntoDeckAsync(fromDeck, nextTrack) {}
-            }
+            obbManager.scanAndVerifyExistingObb()
+            refreshInAppLocalSongs()
         }
     }
 
@@ -180,212 +103,162 @@ class OnlineAndLocalRepository(private val context: Context) {
         "https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query="
     )
 
-    fun getBuiltInClubRemixCrate(): List<SongTrack> = listOf(
-        SongTrack("synth_bollywood_128", "Bollywood 808 Electro Bass Anthem (V10 Sovereign Edit)", "DJ Argon India", 210, "SYNTH://128/0", "OBB VAULT 96k", 128),
-        SongTrack("synth_punjabi_105", "Punjabi Sub-Heavy Trap & Dhol Flip (VIP Dub)", "Apex Sound Lab", 195, "SYNTH://105/1", "OBB VAULT 96k", 105),
-        SongTrack("synth_festival_130", "Tomorrowland Mainstage Big Room Mashup 2026", "DJ Argon Festival", 220, "SYNTH://130/2", "OBB VAULT 96k", 130),
-        SongTrack("synth_afro_122", "Ibiza Sunset Afro-House & Tribal Vocal Groove", "Balearic Neural", 240, "SYNTH://122/3", "OBB VAULT 96k", 122),
-        SongTrack("synth_techno_138", "Berlin Warehouse Peak-Time Acid & Industrial Riser", "Kobosil Style Edit", 230, "SYNTH://138/4", "OBB VAULT 96k", 138),
-        SongTrack("synth_hiphop_98", "DMC Turntable Scratch & Acapella Party Break", "Champion Cut", 180, "SYNTH://98/5", "OBB VAULT 96k", 98),
-        SongTrack("synth_ukg_134", "London Underground 2-Step & Speed Garage Bassline", "UKG Bass Lab", 200, "SYNTH://134/1", "OBB VAULT 96k", 134),
-        SongTrack("synth_melodic_124", "Afterlife Tulum Melodic Techno & Shimmer Synth", "Tale Of Argon", 240, "SYNTH://124/2", "OBB VAULT 96k", 124),
-        SongTrack("synth_dnb_174", "Festival Neurofunk & Liquid Drum-and-Bass Roller", "SubFocus Style", 210, "SYNTH://158/3", "OBB VAULT 96k", 158),
-        SongTrack("synth_amapiano_113", "Johannesburg Log-Drum Amapiano Deep Groove", "Private School DJ", 225, "SYNTH://113/4", "OBB VAULT 96k", 113),
-        SongTrack("synth_psy_142", "Goa Full-On Psytrance Rolling Bassline & Acid", "Mandala Neural", 235, "SYNTH://142/5", "OBB VAULT 96k", 142),
-        SongTrack("synth_retro_118", "Nu-Disco & French Touch Filtered House Loop", "Daft Filter Edit", 205, "SYNTH://118/0", "OBB VAULT 96k", 118)
-    )
+    /**
+     * In-App Local Music Scanner (Queries Android MediaStore directly so NO external app is ever opened!)
+     */
+    suspend fun refreshInAppLocalSongs(): List<SongTrack> = withContext(Dispatchers.IO) {
+        val localList = mutableListOf<SongTrack>()
+        runCatching {
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.DISPLAY_NAME
+            )
+            val selection = "${MediaStore.Audio.Media.DURATION} >= 15000"
+            val sortOrder = "${MediaStore.Audio.Media.DATE_ADDED} DESC"
 
-    suspend fun searchOnlineSongs(rawQuery: String, remixBoost: Boolean = true): List<SongTrack> = withContext(Dispatchers.IO) {
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                sortOrder
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val durCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+
+                while (cursor.moveToNext() && localList.size < 400) {
+                    val id = cursor.getLong(idCol)
+                    val rawTitle = cursor.getString(titleCol) ?: cursor.getString(nameCol) ?: "Local Song"
+                    val rawArtist = cursor.getString(artistCol)?.takeIf { it != "<unknown>" } ?: "Local Storage"
+                    val durSec = ((cursor.getLong(durCol)) / 1000L).toInt().coerceAtLeast(1)
+                    val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+
+                    localList.add(
+                        SongTrack(
+                            id = "ms_$id",
+                            title = rawTitle,
+                            artist = rawArtist,
+                            durationSec = durSec,
+                            streamUrl = "",
+                            sourceBadge = "IN-APP LOCAL",
+                            estBpm = 124,
+                            isLocal = true,
+                            localUri = contentUri
+                        )
+                    )
+                }
+            }
+        }
+        _localDeviceSongs.value = localList
+        localList
+    }
+
+    /**
+     * Unfiltered Universal Song Search: Returns ANY song (Original tracks, Film songs, Pop, Hip-Hop, OR Remixes)
+     * without forcing "DJ Remix" into the query!
+     */
+    suspend fun searchAnyOnlineSongs(rawQuery: String): List<SongTrack> = withContext(Dispatchers.IO) {
         val trimmed = rawQuery.trim()
-        if (trimmed.isEmpty()) return@withContext getBuiltInClubRemixCrate()
+        if (trimmed.isEmpty()) return@withContext _localDeviceSongs.value
 
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
             return@withContext listOf(
                 SongTrack(
-                    id = "direct_${trimmed.hashCode()}",
-                    title = trimmed.substringAfterLast('/').take(45).ifEmpty { "Direct Online Stream" },
-                    artist = "Direct URL Stream",
+                    id = "url_${trimmed.hashCode()}",
+                    title = trimmed.substringAfterLast('/').take(45).ifEmpty { "Direct Stream" },
+                    artist = "Direct Audio Link",
                     durationSec = 240,
                     streamUrl = trimmed,
-                    sourceBadge = "DIRECT URL",
-                    estBpm = 128
+                    sourceBadge = "DIRECT STREAM"
                 )
-            ) + getBuiltInClubRemixCrate()
+            )
         }
 
-        val effectiveQuery = if (remixBoost && !trimmed.contains("remix", true) && !trimmed.contains("dj", true) && !trimmed.contains("mix", true)) {
-            "$trimmed DJ Remix"
-        } else {
-            trimmed
-        }
-
-        val encodedEffective = URLEncoder.encode(effectiveQuery, "UTF-8")
-        val encodedRaw = URLEncoder.encode(trimmed, "UTF-8")
+        val encoded = URLEncoder.encode(trimmed, "UTF-8")
 
         supervisorScope {
-            val hearthisDeferred = async { searchHearthisDjApi(encodedEffective, encodedRaw) }
-            val saavnDeferred = async { searchSaavnRemixCluster(encodedEffective, encodedRaw) }
-            val audiusDeferred = async { searchAudiusDynamicNetwork(encodedEffective, encodedRaw) }
-            val pipedDeferred = async { searchPipedFailoverCluster(encodedEffective) }
-            val archiveDeferred = async { searchInternetArchiveDjMixes(encodedEffective) }
+            val saavnDef = async { searchSaavnSongs(encoded) }
+            val pipedDef = async { searchPipedSongs(encoded) }
+            val audiusDef = async { searchAudiusSongs(encoded) }
+            val hearthisDef = async { searchHearthisSongs(encoded) }
 
             val combined = mutableListOf<SongTrack>()
-            runCatching { combined.addAll(hearthisDeferred.await()) }
-            runCatching { combined.addAll(saavnDeferred.await()) }
-            runCatching { combined.addAll(audiusDeferred.await()) }
-            runCatching { combined.addAll(pipedDeferred.await()) }
-            runCatching { combined.addAll(archiveDeferred.await()) }
-
-            val unique = combined.distinctBy { "${it.title.lowercase().take(20)}_${it.artist.lowercase().take(12)}" }
-            val finalCrate = if (unique.isEmpty()) getBuiltInClubRemixCrate() else (unique + getBuiltInClubRemixCrate())
-            autoDjPlaylist = finalCrate
-            finalCrate
-        }
-    }
-
-    private fun searchHearthisDjApi(encodedRemix: String, encodedRaw: String): List<SongTrack> {
-        val list = mutableListOf<SongTrack>()
-        for (q in listOf(encodedRemix, encodedRaw).distinct()) {
-            runCatching {
-                val url = "https://api-v2.hearthis.at/search?t=$q&page=1&count=15"
-                val req = Request.Builder().url(url).header("User-Agent", "ApexDJArgon/10.0").build()
-                httpClient.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) {
-                        val arr = JSONArray(resp.body?.string() ?: "[]")
-                        for (i in 0 until arr.length()) {
-                            val item = arr.getJSONObject(i)
-                            val stream = item.optString("stream_url", "").ifEmpty { item.optString("preview_url", "") }
-                            if (stream.startsWith("http")) {
-                                val userObj = item.optJSONObject("user")
-                                val bpmVal = item.optString("bpm", "128").toFloatOrNull()?.toInt() ?: 128
-                                list.add(
-                                    SongTrack(
-                                        id = "ht_${item.optString("id")}",
-                                        title = item.optString("title", "Club Remix"),
-                                        artist = userObj?.optString("username", "DJ Producer") ?: "Hearthis DJ",
-                                        durationSec = item.optString("duration", "210").toIntOrNull() ?: 210,
-                                        streamUrl = stream,
-                                        sourceBadge = "HEARTHIS 320K",
-                                        estBpm = if (bpmVal in 70..180) bpmVal else 128
-                                    )
-                                )
-                            }
-                        }
-                    }
+            // Include matching in-app local songs first!
+            combined.addAll(
+                _localDeviceSongs.value.filter {
+                    it.title.contains(trimmed, ignoreCase = true) || it.artist.contains(trimmed, ignoreCase = true)
                 }
-            }
-            if (list.size >= 10) break
+            )
+            runCatching { combined.addAll(saavnDef.await()) }
+            runCatching { combined.addAll(pipedDef.await()) }
+            runCatching { combined.addAll(audiusDef.await()) }
+            runCatching { combined.addAll(hearthisDef.await()) }
+
+            combined.distinctBy { "${it.title.lowercase().take(22)}_${it.artist.lowercase().take(12)}" }
         }
-        return list
     }
 
-    private fun searchSaavnRemixCluster(encodedRemix: String, encodedRaw: String): List<SongTrack> {
+    private fun searchSaavnSongs(encodedQuery: String): List<SongTrack> {
         val list = mutableListOf<SongTrack>()
         for (base in saavnClusterNodes) {
-            for (q in listOf(encodedRemix, encodedRaw).distinct()) {
-                runCatching {
-                    val req = Request.Builder().url("$base$q").header("User-Agent", "ApexDJArgon/10.0").build()
-                    httpClient.newCall(req).execute().use { resp ->
-                        if (resp.isSuccessful) {
-                            val root = JSONObject(resp.body?.string() ?: "{}")
-                            val dataObj = root.optJSONObject("data")
-                            val resultsArr = dataObj?.optJSONArray("results") ?: root.optJSONArray("results")
-                            if (resultsArr != null) {
-                                for (i in 0 until minOf(resultsArr.length(), 12)) {
-                                    val item = resultsArr.getJSONObject(i)
-                                    val dlArr = item.optJSONArray("downloadUrl")
-                                    var bestStream = ""
-                                    if (dlArr != null && dlArr.length() > 0) {
-                                        val lastObj = dlArr.getJSONObject(dlArr.length() - 1)
-                                        bestStream = lastObj.optString("url", "").ifEmpty { lastObj.optString("link", "") }
-                                    }
-                                    if (bestStream.startsWith("http")) {
-                                        val cleanTitle = item.optString("name", "Remix").replace("&quot;", "\"")
-                                        val artistName = item.optString("primaryArtists", "Artist").ifEmpty { "DJ Remix" }
-                                        list.add(
-                                            SongTrack(
-                                                id = "saavn_${item.optString("id", i.toString())}",
-                                                title = cleanTitle,
-                                                artist = artistName,
-                                                durationSec = item.optString("duration", "200").toIntOrNull() ?: 200,
-                                                streamUrl = bestStream,
-                                                sourceBadge = "SAAVN REMIX",
-                                                estBpm = 126
-                                            )
-                                        )
-                                    }
+            runCatching {
+                val req = Request.Builder().url("$base$encodedQuery").header("User-Agent", "ApexDJArgon/12.0").build()
+                httpClient.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val root = JSONObject(resp.body?.string() ?: "{}")
+                        val resultsArr = root.optJSONObject("data")?.optJSONArray("results") ?: root.optJSONArray("results")
+                        if (resultsArr != null) {
+                            for (i in 0 until minOf(resultsArr.length(), 18)) {
+                                val item = resultsArr.getJSONObject(i)
+                                val dlArr = item.optJSONArray("downloadUrl")
+                                var bestStream = ""
+                                if (dlArr != null && dlArr.length() > 0) {
+                                    val lastObj = dlArr.getJSONObject(dlArr.length() - 1)
+                                    bestStream = lastObj.optString("url", "").ifEmpty { lastObj.optString("link", "") }
+                                }
+                                if (bestStream.startsWith("http")) {
+                                    val title = item.optString("name", "Song").replace("&quot;", "\"")
+                                    val artist = item.optString("primaryArtists", "Artist").ifEmpty { "Artist" }
+                                    val dur = item.optString("duration", "210").toIntOrNull() ?: 210
+                                    list.add(SongTrack("sv_${item.optString("id", "$i")}", title, artist, dur, bestStream, "HQ SONG"))
                                 }
                             }
                         }
                     }
                 }
-                if (list.isNotEmpty()) return list
             }
+            if (list.isNotEmpty()) break
         }
         return list
     }
 
-    private fun searchAudiusDynamicNetwork(encodedRemix: String, encodedRaw: String): List<SongTrack> {
-        val list = mutableListOf<SongTrack>()
-        var host = "https://discoveryprovider.audius.co"
-        runCatching {
-            val hostReq = Request.Builder().url("https://api.audius.co").build()
-            httpClient.newCall(hostReq).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    val data = JSONObject(resp.body?.string() ?: "{}").optJSONArray("data")
-                    if (data != null && data.length() > 0) host = data.getString(0)
-                }
-            }
-        }
-        for (q in listOf(encodedRemix, encodedRaw).distinct()) {
-            runCatching {
-                val url = "$host/v1/tracks/search?query=$q&app_name=ApexDJArgon"
-                val req = Request.Builder().url(url).build()
-                httpClient.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) {
-                        val data = JSONObject(resp.body?.string() ?: "{}").optJSONArray("data")
-                        if (data != null) {
-                            for (i in 0 until minOf(data.length(), 12)) {
-                                val item = data.getJSONObject(i)
-                                val id = item.optString("id")
-                                val title = item.optString("title", "Audius Remix")
-                                val artist = item.optJSONObject("user")?.optString("name", "Producer") ?: "Producer"
-                                val duration = item.optInt("duration", 190)
-                                val stream = "$host/v1/tracks/$id/stream?app_name=ApexDJArgon"
-                                list.add(SongTrack("au_$id", title, artist, duration, stream, "AUDIUS PRO", 128))
-                            }
-                        }
-                    }
-                }
-            }
-            if (list.size >= 8) break
-        }
-        return list
-    }
-
-    private fun searchPipedFailoverCluster(encodedQuery: String): List<SongTrack> {
+    private fun searchPipedSongs(encodedQuery: String): List<SongTrack> {
         val list = mutableListOf<SongTrack>()
         for (node in pipedClusterNodes) {
             runCatching {
-                val req = Request.Builder().url("$node/search?q=$encodedQuery&filter=music_songs").build()
+                val req = Request.Builder().url("$node/search?q=$encodedQuery&filter=all").build()
                 httpClient.newCall(req).execute().use { resp ->
                     if (resp.isSuccessful) {
                         val items = JSONObject(resp.body?.string() ?: "{}").optJSONArray("items")
                         if (items != null) {
-                            for (i in 0 until minOf(items.length(), 10)) {
+                            for (i in 0 until minOf(items.length(), 15)) {
                                 val item = items.getJSONObject(i)
-                                val urlPath = item.optString("url", "")
-                                val vid = urlPath.substringAfter("v=", "")
+                                val vid = item.optString("url", "").substringAfter("v=", "")
                                 if (vid.isNotEmpty()) {
                                     list.add(
                                         SongTrack(
                                             id = "yt_$vid",
-                                            title = item.optString("title", "DJ Bootleg Mix"),
-                                            artist = item.optString("uploaderName", "Remix Channel"),
+                                            title = item.optString("title", "Online Song"),
+                                            artist = item.optString("uploaderName", "Artist"),
                                             durationSec = item.optInt("duration", 210),
                                             streamUrl = "PIPED://$vid",
-                                            sourceBadge = "GLOBAL STREAM",
-                                            estBpm = 128
+                                            sourceBadge = "GLOBAL AUDIO"
                                         )
                                     )
                                 }
@@ -399,33 +272,28 @@ class OnlineAndLocalRepository(private val context: Context) {
         return list
     }
 
-    private fun searchInternetArchiveDjMixes(encodedQuery: String): List<SongTrack> {
+    private fun searchAudiusSongs(encodedQuery: String): List<SongTrack> {
         val list = mutableListOf<SongTrack>()
+        var host = "https://discoveryprovider.audius.co"
         runCatching {
-            val url = "https://archive.org/advancedsearch.php?q=($encodedQuery)+AND+mediatype:(audio)&fl[]=identifier,title,creator&rows=6&page=1&output=json"
-            val req = Request.Builder().url(url).build()
+            httpClient.newCall(Request.Builder().url("https://api.audius.co").build()).execute().use { r ->
+                val d = JSONObject(r.body?.string() ?: "{}").optJSONArray("data")
+                if (d != null && d.length() > 0) host = d.getString(0)
+            }
+        }
+        runCatching {
+            val req = Request.Builder().url("$host/v1/tracks/search?query=$encodedQuery&app_name=ApexDJArgon").build()
             httpClient.newCall(req).execute().use { resp ->
                 if (resp.isSuccessful) {
-                    val docs = JSONObject(resp.body?.string() ?: "{}")
-                        .optJSONObject("response")
-                        ?.optJSONArray("docs")
-                    if (docs != null) {
-                        for (i in 0 until docs.length()) {
-                            val doc = docs.getJSONObject(i)
-                            val ident = doc.optString("identifier", "")
-                            if (ident.isNotEmpty()) {
-                                list.add(
-                                    SongTrack(
-                                        id = "ia_$ident",
-                                        title = doc.optString("title", ident),
-                                        artist = doc.optString("creator", "Archive DJ Vault"),
-                                        durationSec = 240,
-                                        streamUrl = "ARCHIVE://$ident",
-                                        sourceBadge = "DJ VAULT",
-                                        estBpm = 125
-                                    )
-                                )
-                            }
+                    val data = JSONObject(resp.body?.string() ?: "{}").optJSONArray("data")
+                    if (data != null) {
+                        for (i in 0 until minOf(data.length(), 12)) {
+                            val item = data.getJSONObject(i)
+                            val id = item.optString("id")
+                            val title = item.optString("title", "Track")
+                            val artist = item.optJSONObject("user")?.optString("name", "Artist") ?: "Artist"
+                            val dur = item.optInt("duration", 190)
+                            list.add(SongTrack("au_$id", title, artist, dur, "$host/v1/tracks/$id/stream?app_name=ApexDJArgon", "AUDIUS"))
                         }
                     }
                 }
@@ -434,160 +302,99 @@ class OnlineAndLocalRepository(private val context: Context) {
         return list
     }
 
-    fun resolveLocalUriToTrack(uri: Uri): SongTrack {
-        var displayName = "Local Club Track"
+    private fun searchHearthisSongs(encodedQuery: String): List<SongTrack> {
+        val list = mutableListOf<SongTrack>()
         runCatching {
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIdx >= 0 && cursor.moveToFirst()) {
-                    displayName = cursor.getString(nameIdx).substringBeforeLast('.')
-                }
-            }
-        }
-        return SongTrack(
-            id = "local_${uri.hashCode()}",
-            title = displayName,
-            artist = "Local Lossless Storage",
-            durationSec = 240,
-            streamUrl = "",
-            sourceBadge = "LOCAL STORAGE",
-            estBpm = 128,
-            isLocal = true,
-            localUri = uri
-        )
-    }
-
-    fun loadTrackIntoDeckAsync(
-        deckIndex: Int,
-        track: SongTrack,
-        onStatusUpdate: (String) -> Unit
-    ) {
-        deckLoadJobs[deckIndex]?.cancel()
-        deckLoadJobs[deckIndex] = repoScope.launch {
-            deckDecodeMutex[deckIndex].withLock {
-                try {
-                    onStatusUpdate("Loading '${track.title}' onto Deck ${if (deckIndex == 0) "A" else "B"}...")
-                    val (leftPcm, rightPcm, sr) = fetchAndDecodeTrackSafely(deckIndex, track)
-                    if (!isActive) return@withLock
-
-                    nativeLoadPcmToDeck(deckIndex, leftPcm, rightPcm, sr, cachedModelsDir)
-                    val freshWave = nativeGetRgbWaveform(deckIndex)
-                    if (deckIndex == 0) {
-                        _waveDeckA.value = freshWave
-                        _trackTitleDeckA.value = track.title
-                    } else if (deckIndex == 1) {
-                        _waveDeckB.value = freshWave
-                        _trackTitleDeckB.value = track.title
-                    }
-                    onStatusUpdate("Deck ${if (deckIndex == 0) "A" else "B"} Locked: ${track.title} [4 Stems + Spectral Sidechain Ready]")
-                } catch (e: CancellationException) {
-                    // Superseded cleanly
-                } catch (e: Throwable) {
-                    val (fallbackL, fallbackR, sr) = generateProceduralClubRemixPcm(track.estBpm.toFloat(), deckIndex)
-                    nativeLoadPcmToDeck(deckIndex, fallbackL, fallbackR, sr, cachedModelsDir)
-                    val freshWave = nativeGetRgbWaveform(deckIndex)
-                    if (deckIndex == 0) {
-                        _waveDeckA.value = freshWave
-                        _trackTitleDeckA.value = track.title
-                    } else if (deckIndex == 1) {
-                        _waveDeckB.value = freshWave
-                        _trackTitleDeckB.value = track.title
-                    }
-                    onStatusUpdate("Deck ${if (deckIndex == 0) "A" else "B"} Ready (${track.title})")
-                }
-            }
-        }
-    }
-
-    private suspend fun fetchAndDecodeTrackSafely(deckIndex: Int, track: SongTrack): Triple<FloatArray, FloatArray, Int> = withContext(Dispatchers.IO) {
-        if (track.streamUrl.startsWith("SYNTH://")) {
-            val parts = track.streamUrl.removePrefix("SYNTH://").split("/")
-            val bpm = parts.getOrNull(0)?.toFloatOrNull() ?: 128f
-            val style = parts.getOrNull(1)?.toIntOrNull() ?: 0
-            return@withContext generateProceduralClubRemixPcm(bpm, style)
-        }
-
-        val cacheFile = File(context.cacheDir, "deck_${deckIndex}_stream_buffer.tmp")
-        if (cacheFile.exists()) cacheFile.delete()
-
-        if (track.isLocal && track.localUri != null) {
-            context.contentResolver.openInputStream(track.localUri)?.use { input ->
-                FileOutputStream(cacheFile).use { output -> input.copyTo(output, 128 * 1024) }
-            }
-        } else {
-            val resolvedUrl = resolveDynamicStreamUrl(track.streamUrl)
-            val req = Request.Builder()
-                .url(resolvedUrl)
-                .header("User-Agent", "Mozilla/5.0 (Android 14; Mobile) ApexDJArgon/10.0")
-                .build()
+            val req = Request.Builder().url("https://api-v2.hearthis.at/search?t=$encodedQuery&page=1&count=12").build()
             httpClient.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) error("HTTP ${resp.code}")
-                resp.body?.byteStream()?.use { input ->
-                    FileOutputStream(cacheFile).use { output ->
-                        val buf = ByteArray(128 * 1024)
-                        var totalBytes = 0L
-                        val maxBytes = 24L * 1024L * 1024L
-                        while (isActive) {
-                            val r = input.read(buf)
-                            if (r <= 0) break
-                            output.write(buf, 0, r)
-                            totalBytes += r
-                            if (totalBytes >= maxBytes) break
+                if (resp.isSuccessful) {
+                    val arr = JSONArray(resp.body?.string() ?: "[]")
+                    for (i in 0 until arr.length()) {
+                        val item = arr.getJSONObject(i)
+                        val stream = item.optString("stream_url", "").ifEmpty { item.optString("preview_url", "") }
+                        if (stream.startsWith("http")) {
+                            list.add(
+                                SongTrack(
+                                    id = "ht_${item.optString("id")}",
+                                    title = item.optString("title", "Track"),
+                                    artist = item.optJSONObject("user")?.optString("username", "Artist") ?: "Artist",
+                                    durationSec = item.optString("duration", "210").toIntOrNull() ?: 210,
+                                    streamUrl = stream,
+                                    sourceBadge = "HEARTHIS"
+                                )
+                            )
                         }
                     }
                 }
             }
         }
-
-        if (!cacheFile.exists() || cacheFile.length() < 2048L) {
-            return@withContext generateProceduralClubRemixPcm(track.estBpm.toFloat(), deckIndex)
-        }
-
-        val decoded = decodeAudioFileToFloatStereoSafely(cacheFile.absolutePath)
-        if (decoded.first.size < 44100) {
-            return@withContext generateProceduralClubRemixPcm(track.estBpm.toFloat(), deckIndex)
-        }
-        decoded
+        return list
     }
 
-    private fun resolveDynamicStreamUrl(rawUrl: String): String {
-        if (rawUrl.startsWith("PIPED://")) {
-            val vid = rawUrl.removePrefix("PIPED://")
-            for (node in pipedClusterNodes) {
-                runCatching {
-                    val req = Request.Builder().url("$node/streams/$vid").build()
+    /**
+     * 0ms Instant Deck Loader & Progressive Stream Decoder:
+     * Updates deck title & play state in 0ms, then feeds decoded PCM in 1-second chunks so music plays immediately!
+     */
+    fun loadTrackIntoDeckInstant(
+        deckIndex: Int,
+        track: SongTrack,
+        autoPlay: Boolean = true,
+        onStatusUpdate: (String) -> Unit
+    ) {
+        val deckName = when (deckIndex) {
+            0 -> { _titleDeckA.value = "${track.title} — ${track.artist}"; "Deck A" }
+            1 -> { _titleDeckB.value = "${track.title} — ${track.artist}"; "Deck B" }
+            else -> { _titleDeckBgm.value = "${track.title} — ${track.artist}"; "Background Deck" }
+        }
+        onStatusUpdate("$deckName Locked (0ms): ${track.title}")
+
+        deckLoadJobs[deckIndex]?.cancel()
+        deckLoadJobs[deckIndex] = repoScope.launch {
+            try {
+                val cacheFile = File(context.cacheDir, "deck_${deckIndex}_instant.tmp")
+                if (track.isLocal && track.localUri != null) {
+                    context.contentResolver.openInputStream(track.localUri)?.use { input ->
+                        FileOutputStream(cacheFile).use { output -> input.copyTo(output, 128 * 1024) }
+                    }
+                } else {
+                    val resolvedUrl = resolveStreamUrl(track.streamUrl)
+                    val req = Request.Builder().url(resolvedUrl).header("User-Agent", "Mozilla/5.0 ApexDJArgon/12.0").build()
                     httpClient.newCall(req).execute().use { resp ->
-                        if (resp.isSuccessful) {
-                            val streams = JSONObject(resp.body?.string() ?: "{}").optJSONArray("audioStreams")
-                            if (streams != null && streams.length() > 0) {
-                                for (i in 0 until streams.length()) {
-                                    val s = streams.getJSONObject(i)
-                                    val mime = s.optString("mimeType", "")
-                                    val u = s.optString("url", "")
-                                    if (u.startsWith("http") && (mime.contains("mp4") || mime.contains("audio"))) {
-                                        return u
-                                    }
+                        resp.body?.byteStream()?.use { input ->
+                            FileOutputStream(cacheFile).use { output ->
+                                val buf = ByteArray(128 * 1024)
+                                var total = 0L
+                                while (isActive) {
+                                    val r = input.read(buf)
+                                    if (r <= 0) break
+                                    output.write(buf, 0, r)
+                                    total += r
+                                    if (total >= 25L * 1024L * 1024L) break
                                 }
-                                return streams.getJSONObject(0).optString("url")
                             }
                         }
                     }
                 }
+
+                if (!isActive || !cacheFile.exists() || cacheFile.length() < 1024L) return@launch
+                streamDecodeFileToNativeChunks(deckIndex, cacheFile.absolutePath, track.durationSec, autoPlay)
+            } catch (_: CancellationException) {
+            } catch (e: Throwable) {
+                onStatusUpdate("$deckName Stream Error: ${e.localizedMessage ?: "Check connection"}")
             }
-        } else if (rawUrl.startsWith("ARCHIVE://")) {
-            val ident = rawUrl.removePrefix("ARCHIVE://")
-            runCatching {
-                val req = Request.Builder().url("https://archive.org/metadata/$ident").build()
-                httpClient.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) {
-                        val files = JSONObject(resp.body?.string() ?: "{}").optJSONArray("files")
-                        if (files != null) {
-                            for (i in 0 until files.length()) {
-                                val f = files.getJSONObject(i)
-                                val name = f.optString("name", "")
-                                if (name.endsWith(".mp3", true) || name.endsWith(".m4a", true) || name.endsWith(".ogg", true)) {
-                                    return "https://archive.org/download/$ident/${URLEncoder.encode(name, "UTF-8").replace("+", "%20")}"
-                                }
+        }
+    }
+
+    private fun resolveStreamUrl(rawUrl: String): String {
+        if (rawUrl.startsWith("PIPED://")) {
+            val vid = rawUrl.removePrefix("PIPED://")
+            for (node in pipedClusterNodes) {
+                runCatching {
+                    httpClient.newCall(Request.Builder().url("$node/streams/$vid").build()).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val streams = JSONObject(resp.body?.string() ?: "{}").optJSONArray("audioStreams")
+                            if (streams != null && streams.length() > 0) {
+                                return streams.getJSONObject(0).optString("url")
                             }
                         }
                     }
@@ -597,47 +404,50 @@ class OnlineAndLocalRepository(private val context: Context) {
         return rawUrl
     }
 
-    private fun decodeAudioFileToFloatStereoSafely(filePath: String): Triple<FloatArray, FloatArray, Int> {
+    private suspend fun streamDecodeFileToNativeChunks(
+        deckIndex: Int,
+        filePath: String,
+        estDurationSec: Int,
+        autoPlay: Boolean
+    ) = withContext(Dispatchers.IO) {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         try {
             extractor.setDataSource(filePath)
             var audioTrackIndex = -1
             var format: MediaFormat? = null
-
             for (i in 0 until extractor.trackCount) {
                 val f = extractor.getTrackFormat(i)
-                val mime = f.getString(MediaFormat.KEY_MIME) ?: ""
-                if (mime.startsWith("audio/")) {
-                    audioTrackIndex = i
-                    format = f
-                    break
+                if ((f.getString(MediaFormat.KEY_MIME) ?: "").startsWith("audio/")) {
+                    audioTrackIndex = i; format = f; break
                 }
             }
-            if (audioTrackIndex < 0 || format == null) {
-                return Triple(FloatArray(0), FloatArray(0), 44100)
-            }
+            if (audioTrackIndex < 0 || format == null) return@withContext
 
             extractor.selectTrack(audioTrackIndex)
-            val mime = format.getString(MediaFormat.KEY_MIME) ?: return Triple(FloatArray(0), FloatArray(0), 44100)
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: return@withContext
             val sampleRate = runCatching { format.getInteger(MediaFormat.KEY_SAMPLE_RATE) }.getOrDefault(44100)
             val channels = runCatching { format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) }.getOrDefault(2).coerceAtLeast(1)
 
-            val maxSamples = sampleRate * 150
-            val leftList = FloatArray(maxSamples)
-            val rightList = FloatArray(maxSamples)
-            var sampleCursor = 0
+            val expectedSamples = (estDurationSec.coerceIn(30, 300)) * sampleRate
+            nativeBeginTrackLoad(deckIndex, expectedSamples, sampleRate)
 
             codec = MediaCodec.createDecoderByType(mime)
             codec.configure(format, null, null, 0)
             codec.start()
 
+            val chunkCap = sampleRate * 2 // 2-second progressive chunks for instant playback!
+            val leftChunk = FloatArray(chunkCap)
+            val rightChunk = FloatArray(chunkCap)
+            var chunkCursor = 0
+            var firstChunkStarted = false
+
             val bufferInfo = MediaCodec.BufferInfo()
             var isEOS = false
-            var safetyLoops = 0
+            var loops = 0
 
-            while (!isEOS && sampleCursor < maxSamples - 8192 && safetyLoops++ < 55000) {
-                val inIdx = codec.dequeueInputBuffer(2500)
+            while (coroutineContext.isActive && !isEOS && loops++ < 60000) {
+                val inIdx = codec.dequeueInputBuffer(2000)
                 if (inIdx >= 0) {
                     val inBuf = codec.getInputBuffer(inIdx)
                     if (inBuf != null) {
@@ -652,7 +462,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                     }
                 }
 
-                var outIdx = codec.dequeueOutputBuffer(bufferInfo, 2500)
+                var outIdx = codec.dequeueOutputBuffer(bufferInfo, 2000)
                 while (outIdx >= 0) {
                     val outBuf = codec.getOutputBuffer(outIdx)
                     if (outBuf != null && bufferInfo.size > 0) {
@@ -660,36 +470,42 @@ class OnlineAndLocalRepository(private val context: Context) {
                         outBuf.limit(bufferInfo.offset + bufferInfo.size)
                         outBuf.order(ByteOrder.nativeOrder())
                         val shortBuf = outBuf.asShortBuffer()
-                        while (shortBuf.hasRemaining() && sampleCursor < maxSamples) {
+                        while (shortBuf.hasRemaining()) {
                             val sL = shortBuf.get() / 32768.0f
                             val sR = if (channels > 1 && shortBuf.hasRemaining()) shortBuf.get() / 32768.0f else sL
                             if (channels > 2) {
-                                for (extra in 2 until channels) {
-                                    if (shortBuf.hasRemaining()) shortBuf.get()
-                                }
+                                for (ex in 2 until channels) if (shortBuf.hasRemaining()) shortBuf.get()
                             }
-                            leftList[sampleCursor] = sL
-                            rightList[sampleCursor] = sR
-                            sampleCursor++
+                            leftChunk[chunkCursor] = sL
+                            rightChunk[chunkCursor] = sR
+                            chunkCursor++
+
+                            if (chunkCursor >= chunkCap) {
+                                nativeAppendPcmChunk(deckIndex, leftChunk, rightChunk, chunkCursor, sampleRate)
+                                updateDeckWaveformFlow(deckIndex)
+                                if (!firstChunkStarted && autoPlay) {
+                                    firstChunkStarted = true
+                                    nativeSetDeckPlayState(deckIndex, true)
+                                }
+                                chunkCursor = 0
+                            }
                         }
                     }
                     codec.releaseOutputBuffer(outIdx, false)
                     if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                        isEOS = true
-                        break
+                        isEOS = true; break
                     }
                     outIdx = codec.dequeueOutputBuffer(bufferInfo, 0)
                 }
             }
 
-            if (sampleCursor <= 0) return Triple(FloatArray(0), FloatArray(0), sampleRate)
-            return Triple(
-                leftList.copyOfRange(0, sampleCursor),
-                rightList.copyOfRange(0, sampleCursor),
-                sampleRate
-            )
-        } catch (t: Throwable) {
-            return Triple(FloatArray(0), FloatArray(0), 44100)
+            if (chunkCursor > 0) {
+                nativeAppendPcmChunk(deckIndex, leftChunk, rightChunk, chunkCursor, sampleRate)
+                updateDeckWaveformFlow(deckIndex)
+                if (!firstChunkStarted && autoPlay) {
+                    nativeSetDeckPlayState(deckIndex, true)
+                }
+            }
         } finally {
             runCatching { codec?.stop() }
             runCatching { codec?.release() }
@@ -697,105 +513,50 @@ class OnlineAndLocalRepository(private val context: Context) {
         }
     }
 
-    private fun generateProceduralClubRemixPcm(bpm: Float, styleIndex: Int): Triple<FloatArray, FloatArray, Int> {
-        val sr = 44100
-        val seconds = 45
-        val totalSamples = sr * seconds
-        val left = FloatArray(totalSamples)
-        val right = FloatArray(totalSamples)
-
-        val samplesPerBeat = (60.0 / bpm.coerceIn(85f, 165f)) * sr
-        val rootFreqs = doubleArrayOf(55.0, 65.41, 49.0, 58.27, 61.74, 51.91)
-        val root = rootFreqs[styleIndex % rootFreqs.size]
-
-        var kickPhase = 0.0
-        var bassPhase = 0.0
-        var leadPhase = 0.0
-
-        for (i in 0 until totalSamples) {
-            val beatPos = (i % samplesPerBeat) / samplesPerBeat
-            val beatIndex = (i / samplesPerBeat).toInt()
-            val barBeat = beatIndex % 4
-
-            val kickEnv = exp(-beatPos * 9.5)
-            val kickFreq = 46.0 + 130.0 * exp(-beatPos * 28.0)
-            kickPhase += kickFreq / sr
-            val kick = sin(2.0 * PI * kickPhase) * kickEnv * 0.65
-
-            val hatBeatPos = ((i + (samplesPerBeat * 0.5).toInt()) % samplesPerBeat) / samplesPerBeat
-            val noise = (((i * 1103515245 + 12345) ushr 16) and 0x7FFF) / 16384.0 - 1.0
-            val hat = noise * exp(-hatBeatPos * 22.0) * 0.25
-            val clap = if (barBeat == 1 || barBeat == 3) noise * exp(-beatPos * 14.0) * 0.32 else 0.0
-
-            val sidechain = (1.0 - exp(-beatPos * 5.5)).coerceIn(0.0, 1.0)
-            val noteMult = when ((beatIndex / 4) % 4) {
-                0 -> 1.0
-                1 -> 1.1892
-                2 -> 1.3348
-                else -> 1.4983
-            }
-            bassPhase += (root * noteMult) / sr
-            val bass = tanh(sin(2.0 * PI * bassPhase) * 2.1) * sidechain * 0.50
-
-            val arpMult = if (((i / (samplesPerBeat / 4.0).toInt()) % 2) == 0) 4.0 else 6.0
-            leadPhase += (root * noteMult * arpMult) / sr
-            val formantLead = sin(2.0 * PI * leadPhase) * sin(2.0 * PI * (leadPhase * 0.5)) * sidechain * 0.30
-            val stereoSpread = sin(2.0 * PI * (i.toDouble() / (sr * 2.0))) * 0.10
-
-            left[i]  = (kick + hat + clap + bass + formantLead + stereoSpread).toFloat().coerceIn(-0.98f, 0.98f)
-            right[i] = (kick + hat + clap + bass + formantLead - stereoSpread).toFloat().coerceIn(-0.98f, 0.98f)
+    private fun updateDeckWaveformFlow(deckIndex: Int) {
+        val wave = nativeGetRgbWaveform(deckIndex)
+        when (deckIndex) {
+            0 -> _waveDeckA.value = wave
+            1 -> _waveDeckB.value = wave
+            2 -> _waveDeckBgm.value = wave
         }
-        return Triple(left, right, sr)
     }
 
-    fun computeArgonAiRecommendation(bpmA: Float, keyA: Int, bpmB: Float, keyB: Int): ArgonAiRecommendation {
-        val rawDiff = abs(keyA - keyB)
-        val wheelDist = min(rawDiff, 12 - rawDiff)
-        val bpmDelta = abs(bpmA - bpmB)
-
-        val (score, relation, semitones) = when (wheelDist) {
-            0 -> Triple(100, "${keyA}A ➔ ${keyB}A (Perfect Harmonic Unison)", 0f)
-            1 -> Triple(97, "${keyA}A ➔ ${keyB}A (Camelot Fifth Energy Lift)", 0f)
-            2 -> Triple(91, "${keyA}A ➔ ${keyB}A (+2 Semitone Energy Jump)", if (keyB > keyA) -2f else 2f)
-            else -> Triple(86, "${keyA}A ➔ ${keyB}A (Formant Key-Locked Bridge)", ((keyA - keyB).coerceIn(-4, 4)).toFloat())
+    fun toggleMasterWavRecording(): Pair<Boolean, String> {
+        return if (nativeIsMasterRecording()) {
+            nativeStopMasterRecording()
+            false to "Recording Saved to /Music/ApexDJ_Recordings/"
+        } else {
+            val musicDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "ApexDJ_Recordings")
+            if (!musicDir.exists()) musicDir.mkdirs()
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val outWav = File(musicDir, "ApexDJ_Mix_$stamp.wav")
+            val started = nativeStartMasterRecording(outWav.absolutePath)
+            started to if (started) "REC LIVE: ${outWav.name}" else "Failed to start recorder"
         }
-
-        val styleId = when {
-            bpmDelta > 16f -> 1
-            wheelDist == 0 -> 0
-            wheelDist == 1 -> 2
-            bpmDelta < 4f  -> 5
-            else           -> 4
-        }
-        val styleName = AI_MORPH_STYLE_NAMES.getOrElse(styleId) { AI_MORPH_STYLE_NAMES[0] }
-
-        return ArgonAiRecommendation(
-            compatibilityScore = score,
-            harmonicRelation = relation,
-            recommendedStyleId = styleId,
-            recommendedStyleName = styleName,
-            pitchAdjustSemitones = semitones,
-            summaryText = "Argon V10 ($score% Match): $relation • Auto-Selected '$styleName'"
-        )
     }
 
     external fun nativeInitEngine()
-    external fun nativeLoadPcmToDeck(deckIndex: Int, leftPcm: FloatArray, rightPcm: FloatArray, sampleRate: Int, modelsDir: String)
+    external fun nativeMountObbBrain(obbPath: String): Boolean
+    external fun nativeIsObbBrainMounted(): Boolean
+    external fun nativeBeginTrackLoad(deckIndex: Int, totalExpectedSamples: Int, sampleRate: Int)
+    external fun nativeAppendPcmChunk(deckIndex: Int, leftChunk: FloatArray, rightChunk: FloatArray, chunkSamples: Int, sampleRate: Int)
     external fun nativeSetDeckPlayState(deck: Int, playing: Boolean)
     external fun nativeGetDeckPlayState(deck: Int): Boolean
-    external fun nativeTriggerButterMorph(fromDeck: Int, toDeck: Int, seconds: Double, styleId: Int)
+    external fun nativeSetNeuralAutoMix(enabled: Boolean)
+    external fun nativeGetNeuralAutoMix(): Boolean
+    external fun nativeStartMasterRecording(wavPath: String): Boolean
+    external fun nativeStopMasterRecording()
+    external fun nativeIsMasterRecording(): Boolean
     external fun nativeTriggerHotCue(deck: Int, cueIndex: Int)
-    external fun nativeClearHotCue(deck: Int, cueIndex: Int)
     external fun nativeToggleBeatLoop(deck: Int, beats: Double)
-    external fun nativeBeatJump(deck: Int, beats: Double)
     external fun nativeSeekNormalized(deck: Int, normPos: Float)
-    external fun nativeTriggerSamplerPad(padIndex: Int)
     external fun nativeSetChannelParam(deck: Int, paramId: Int, value: Float)
     external fun nativeSetMasterParam(paramId: Int, value: Float)
     external fun nativeGetChannelVu(deck: Int): Float
     external fun nativeGetDetectedBpm(deck: Int): Float
     external fun nativeGetCamelotKey(deck: Int): Int
     external fun nativeGetPlayheadNormalized(deck: Int): Float
-    external fun nativeGetMorphProgress(): Float
     external fun nativeGetRgbWaveform(deck: Int): FloatArray
+    external fun nativeGetBrainTelemetry(): String
 }

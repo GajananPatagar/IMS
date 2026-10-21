@@ -11,75 +11,29 @@
 #include <memory>
 #include <algorithm>
 #include <string>
+#include <fstream>
 
 namespace apexdj {
 
-constexpr int NUM_STEMS = 4;        // 0:Drums, 1:Bass, 2:Other/Synth, 3:Vocals
-constexpr int NUM_CHANNELS = 6;     // 6-Channel V10 / Xone:96 Matrix
-constexpr int NUM_HOT_CUES = 8;     // 8 CDJ-3000 Hot Cues per deck
-constexpr int NUM_SAMPLER_PADS = 8; // 8 Studio Sampler Voices
-constexpr int WAVEFORM_BINS = 256;  // RGB 3-Band Waveform Bins
-constexpr int SPECTRUM_BANDS = 32;  // 32-Band Master Spectrum Analyzer
-
-enum class SoundColorFxType {
-    NONE = 0,
-    SPACE = 1,
-    DUB_ECHO = 2,
-    SWEEP = 3,
-    NOISE = 4,
-    CRUSH = 5,
-    FILTER = 6
-};
-
-enum class BeatFxType {
-    NONE = 0,
-    ECHO = 1,
-    PING_PONG = 2,
-    SPIRAL = 3,
-    HELIX = 4,
-    REVERB = 5,
-    SHIMMER = 6,
-    MOBIUS = 7,
-    TRIPLET_FILTER = 8,
-    TRIPLET_ROLL = 9,
-    VINYL_BRAKE = 10,
-    FLANGER = 11,
-    PHASER = 12,
-    TRANS_GATE = 13
-};
-
-// 12 Superhuman Gemini 4 Argon V10 AI Transition Programs
-enum class ArgonAiMorphStyle {
-    COSINE_STEM_WEAVE = 0,      // C2-smooth overlapping Cosine Stem Handoff + Zero-Cross Bass Swap
-    MAINSTAGE_DROP_SWAP = 1,    // Mobius Shepard Riser + Pre-Drop Vacuum + Beat-1 Full Drop Slam
-    BERLIN_TECHNO_VCF = 2,      // Xone:96 Dual VCF Notch Sweep + Asymmetric Harmonic Crunch
-    BOLLYWOOD_808_BASS_FLIP = 3,// Dhol/Transient Lock + Sub-808 Phase-Aligned Flip
-    EUPHONIA_NEVE_SILK_GLIDE = 4,// Rupert Neve Transformer Drive + Shimmer Boost Send
-    ACAPELLA_MASHUP_BRIDGE = 5, // Isolates Outgoing Vocals over Incoming Drums+Bass Groove
-    TURNTABLE_SPINBACK_WHIP = 6,// Vinyl Brake + Backspin Whip into Incoming Track
-    POLYRHYTHMIC_SPIRAL_ROLL = 7,// 3-Beat Triplet Roll + Formant-Locked Pitch Riser
-    DUB_ECHO_VOCAL_FREEZE = 8,  // Freezes Outgoing Vocal in Dub Echo Tail + Smooth Bass Ride
-    CAMELOT_FIFTH_KEY_BRIDGE = 9,// Harmonic Key-Modulation Bridge
-    STEM_CALL_AND_RESPONSE = 10,// Alternates Deck A & Deck B Stems every 2 Beats
-    VELVET_LONG_ROTARY_BLEND = 11// 64-Bit Ultra-Long Audiophile Rotary Isolator Cross-Blend
-};
+constexpr int NUM_STEMS = 4;        // 0:Drums, 1:Bass, 2:Other/Harmonics, 3:Vocals
+constexpr int NUM_DECKS = 3;        // 0:Deck A, 1:Deck B, 2:Background Deck (Continuous Neural Groove/BGM)
+constexpr int NUM_HOT_CUES = 8;
+constexpr int WAVEFORM_BINS = 256;
+constexpr int MAX_TRACK_SAMPLES = 44100 * 300; // 5 minutes pre-allocated 0ms ring buffer per deck
 
 struct CytomicSvf64 {
-    double ic1eq = 0.0;
-    double ic2eq = 0.0;
+    double ic1eq = 0.0, ic2eq = 0.0;
     double g = 0.0, k = 1.0, a1 = 0.0, a2 = 0.0, a3 = 0.0, m1 = 0.0;
     double lastCutoff = -1.0, lastQ = -1.0, lastGainDb = -999.0;
 
     inline void setParams(double sampleRate, double cutoffHz, double Q) {
         cutoffHz = std::clamp(cutoffHz, 20.0, sampleRate * 0.48);
         if (std::abs(cutoffHz - lastCutoff) < 0.5 && std::abs(Q - lastQ) < 0.01) return;
-        lastCutoff = cutoffHz;
-        lastQ = Q;
+        lastCutoff = cutoffHz; lastQ = Q;
         g = std::tan(M_PI * cutoffHz / sampleRate);
         k = 1.0 / std::max(Q, 0.1);
         a1 = 1.0 / (1.0 + g * (g + k));
-        a2 = g * a1;
-        a3 = g * a2;
+        a2 = g * a1; a3 = g * a2;
     }
 
     inline void processSample(double v0, double& lp, double& bp, double& hp) {
@@ -90,21 +44,17 @@ struct CytomicSvf64 {
         ic2eq = 2.0 * v2 - ic2eq;
         if (!std::isfinite(ic1eq)) ic1eq = 0.0;
         if (!std::isfinite(ic2eq)) ic2eq = 0.0;
-        lp = v2;
-        bp = v1;
-        hp = v0 - k * v1 - v2;
+        lp = v2; bp = v1; hp = v0 - k * v1 - v2;
     }
 
     inline void setBellParams(double sampleRate, double centerHz, double Q, double gainDb) {
         if (std::abs(centerHz - lastCutoff) < 0.5 && std::abs(gainDb - lastGainDb) < 0.05) return;
-        lastCutoff = centerHz;
-        lastGainDb = gainDb;
+        lastCutoff = centerHz; lastGainDb = gainDb;
         double A = std::pow(10.0, gainDb / 40.0);
         g = std::tan(M_PI * std::clamp(centerHz, 20.0, sampleRate * 0.48) / sampleRate);
         k = 1.0 / std::max(Q * A, 0.1);
         a1 = 1.0 / (1.0 + g * (g + k));
-        a2 = g * a1;
-        a3 = g * a2;
+        a2 = g * a1; a3 = g * a2;
         m1 = k * (A * A - 1.0);
     }
 
@@ -120,21 +70,11 @@ struct CytomicSvf64 {
 
 struct XoneVcfFilter {
     CytomicSvf64 svfL, svfR;
-    bool hpfEnabled = false;
-    bool bpfEnabled = false;
-    bool lpfEnabled = true;
-    double cutoffHz = 18000.0;
-    double resonance = 0.707;
-    double crunchDrive = 0.0;
-    double lfoDepth = 0.0;
-    double lfoRateHz = 2.0;
-    double lfoPhase = 0.0;
+    bool hpfEnabled = false, bpfEnabled = false, lpfEnabled = true;
+    double cutoffHz = 18000.0, resonance = 0.707, crunchDrive = 0.0;
 
-    inline void updateCoefficients(double sampleRate, int frameStep) {
-        lfoPhase += (lfoRateHz * frameStep) / sampleRate;
-        if (lfoPhase >= 1.0) lfoPhase -= 1.0;
-        double lfoMod = std::sin(2.0 * M_PI * lfoPhase) * lfoDepth * 1800.0;
-        double activeCutoff = std::clamp(cutoffHz + lfoMod, 50.0, 22000.0);
+    inline void updateCoefficients(double sampleRate) {
+        double activeCutoff = std::clamp(cutoffHz, 50.0, 22000.0);
         svfL.setParams(sampleRate, activeCutoff, resonance);
         svfR.setParams(sampleRate, activeCutoff, resonance);
     }
@@ -145,28 +85,23 @@ struct XoneVcfFilter {
             left = std::tanh(left * drive + 0.08 * crunchDrive);
             right = std::tanh(right * drive - 0.08 * crunchDrive);
         }
-
         double lpL, bpL, hpL, lpR, bpR, hpR;
         svfL.processSample(left, lpL, bpL, hpL);
         svfR.processSample(right, lpR, bpR, hpR);
-
         double outL = 0.0, outR = 0.0;
-        int activeCount = 0;
-        if (hpfEnabled) { outL += hpL; outR += hpR; activeCount++; }
-        if (bpfEnabled) { outL += bpL; outR += bpR; activeCount++; }
-        if (lpfEnabled) { outL += lpL; outR += lpR; activeCount++; }
-
-        if (activeCount > 0) {
-            double norm = (activeCount == 1) ? 1.0 : (1.0 / std::sqrt(static_cast<double>(activeCount)));
-            left = outL * norm;
-            right = outR * norm;
+        int cnt = 0;
+        if (hpfEnabled) { outL += hpL; outR += hpR; cnt++; }
+        if (bpfEnabled) { outL += bpL; outR += bpR; cnt++; }
+        if (lpfEnabled) { outL += lpL; outR += lpR; cnt++; }
+        if (cnt > 0) {
+            double norm = (cnt == 1) ? 1.0 : (1.0 / std::sqrt(static_cast<double>(cnt)));
+            left = outL * norm; right = outR * norm;
         }
     }
 };
 
 struct RupertNeveTransformerBus {
-    double hysteresisL = 0.0;
-    double hysteresisR = 0.0;
+    double hysteresisL = 0.0, hysteresisR = 0.0;
     CytomicSvf64 silkHighShelfL, silkHighShelfR;
 
     inline void updateCoefficients(double driveAmount, double sampleRate) {
@@ -178,62 +113,36 @@ struct RupertNeveTransformerBus {
         double satDrive = 1.0 + driveAmount * 1.65;
         hysteresisL = 0.992 * hysteresisL + 0.008 * left;
         hysteresisR = 0.992 * hysteresisR + 0.008 * right;
-
         double coreL = left + 0.12 * hysteresisL;
         double coreR = right + 0.12 * hysteresisR;
-
         double shapedL = std::tanh(coreL * satDrive) + 0.035 * (coreL * coreL) * (coreL >= 0.0 ? 1.0 : -1.0);
         double shapedR = std::tanh(coreR * satDrive) + 0.035 * (coreR * coreR) * (coreR >= 0.0 ? 1.0 : -1.0);
-
         left = silkHighShelfL.processBellSample(shapedL / satDrive);
         right = silkHighShelfR.processBellSample(shapedR / satDrive);
     }
 };
 
-struct ClubSamplerVoice {
-    std::vector<float> sampleL;
-    std::vector<float> sampleR;
-    std::atomic<bool> active{false};
-    std::atomic<int> readPos{0};
-    std::atomic<float> gain{0.85f};
-};
-
-struct TrackBufferSlot {
+// 0ms Instant Progressive Streaming Deck Strip
+struct FlagshipChannelStrip {
     std::vector<float> pcmLeft;
     std::vector<float> pcmRight;
-    int numSamples = 0;
-
-    TrackBufferSlot() {
-        pcmLeft.resize(4096, 0.0f);
-        pcmRight.resize(4096, 0.0f);
-        numSamples = 4096;
-    }
-};
-
-struct FlagshipChannelStrip {
-    std::mutex loadMutex;
-    std::array<TrackBufferSlot, 2> bufferSlots;
-    std::atomic<int> activeSlot{0};
+    std::atomic<int> loadedSamples{0};
+    std::atomic<int> totalExpectedSamples{1};
 
     std::array<float, WAVEFORM_BINS * 3> rgbWaveformFlat{};
-    std::atomic<int> waveformVersion{0};
-
     std::atomic<bool> playing{false};
     std::atomic<double> playheadSample{0.0};
     std::atomic<double> slipPlayheadSample{0.0};
-    std::atomic<int> totalTrackSamples{4096};
     std::atomic<bool> slipModeEnabled{false};
     std::atomic<bool> reverseCensorActive{false};
     std::atomic<bool> vinylBrakeActive{false};
     double vinylBrakeVelocity = 1.0;
 
-    // Loop, Beat Jump & 8 Hot Cues
     std::atomic<bool> loopActive{false};
     std::atomic<double> loopStartSample{0.0};
     std::atomic<double> loopEndSample{44100.0 * 4.0};
     std::array<std::atomic<double>, NUM_HOT_CUES> hotCueSamples;
 
-    // Pitch, Tempo, Jogwheel Scratch & Key Shift
     std::atomic<float> tempoRatio{1.0f};
     std::atomic<float> pitchSemitones{0.0f};
     std::atomic<float> jogScratchVelocity{0.0f};
@@ -241,33 +150,23 @@ struct FlagshipChannelStrip {
     std::atomic<float> detectedBpm{128.0f};
     std::atomic<int> camelotKeyIndex{8};
 
-    // 4-Stem Gains (0:Drums, 1:Bass, 2:Other/Synth, 3:Vocals)
+    // 4-Stem Gains (0:Drums, 1:Bass, 2:Other, 3:Vocals) + AI Neural Brain Multipliers
     std::atomic<float> stemGain[NUM_STEMS] = {1.0f, 1.0f, 1.0f, 1.0f};
+    std::atomic<float> aiStemMod[NUM_STEMS] = {1.0f, 1.0f, 1.0f, 1.0f};
 
-    // Real-Time Zero-Latency 4-Stem Separation Filter Bank + Instantaneous Envelopes for Spectral Ducking
     CytomicSvf64 stemSubFilterL, stemSubFilterR;
     CytomicSvf64 stemHighFilterL, stemHighFilterR;
-    double transientFastEnv = 0.0;
-    double transientSlowEnv = 0.0;
+    double transientFastEnv = 0.0, transientSlowEnv = 0.0;
     std::atomic<float> liveSubBassEnv{0.0f};
     std::atomic<float> liveVocalEnv{0.0f};
+    std::atomic<float> liveTransientEnv{0.0f};
 
-    // DJM-V10 Compressor + Xone:92 Mk2 4-Band Surgical EQ
     std::atomic<float> v10CompressorKnob{0.25f};
     double compEnv = 0.0;
-    std::atomic<float> eqLow{0.0f};
-    std::atomic<float> eqLoMid{0.0f};
-    std::atomic<float> eqHiMid{0.0f};
-    std::atomic<float> eqHigh{0.0f};
-
-    // DJM-A9 Sound Color FX with Center Lock
-    std::atomic<int> colorFxType{static_cast<int>(SoundColorFxType::FILTER)};
-    std::atomic<bool> centerLockEnabled{true};
+    std::atomic<float> eqLow{0.0f}, eqLoMid{0.0f}, eqHiMid{0.0f}, eqHigh{0.0f};
     std::atomic<float> colorFxKnob{0.0f};
     float prevColorFxKnob = 0.0f;
-    uint32_t noiseRngState = 2463534242U;
 
-    // 60mm V10-LF Channel Fader
     std::atomic<float> channelFader{1.0f};
     std::atomic<float> vuMeterPeak{0.0f};
 
@@ -277,6 +176,8 @@ struct FlagshipChannelStrip {
     XoneVcfFilter xoneVcf;
 
     FlagshipChannelStrip() {
+        pcmLeft.resize(MAX_TRACK_SAMPLES, 0.0f);
+        pcmRight.resize(MAX_TRACK_SAMPLES, 0.0f);
         for (int i = 0; i < NUM_HOT_CUES; ++i) hotCueSamples[i].store(-1.0);
     }
 
@@ -297,62 +198,66 @@ public:
     void stopAudioStream();
     void onErrorAfterClose(oboe::AudioStream* stream, oboe::Result error) override;
 
-    void loadTrackToDeck(int deckIndex, const float* leftPcm, const float* rightPcm, int numSamples, int sampleRate);
-    void triggerButterMorph(int fromDeck, int toDeck, double durationSeconds, int styleId);
+    // Mandatory 1.5GB OBB Neural Brain Mounter (mmap64)
+    bool mountObbBrain(const std::string& obbPath);
+    bool isObbBrainMounted() const { return mObbMapped.load(std::memory_order_acquire); }
+
+    // 0ms Instant Progressive Track Loading
+    void beginTrackLoad(int deckIndex, int totalExpectedSamples, int sampleRate);
+    void appendPcmChunk(int deckIndex, const float* leftChunk, const float* rightChunk, int chunkSamples, int sampleRate);
+
+    // Live Master WAV Recorder
+    bool startMasterRecording(const std::string& wavPath);
+    void stopMasterRecording();
+    bool isMasterRecording() const { return mRecordingActive.load(std::memory_order_acquire); }
+
     void triggerHotCue(int deckIndex, int cueIndex);
-    void clearHotCue(int deckIndex, int cueIndex);
     void toggleBeatLoop(int deckIndex, double beats);
-    void beatJump(int deckIndex, double beats);
     void seekNormalized(int deckIndex, float normalizedPos);
-    void triggerSamplerPad(int padIndex);
 
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream* audioStream, void* audioData, int32_t numFrames) override;
 
-    std::array<std::unique_ptr<FlagshipChannelStrip>, NUM_CHANNELS> channels;
-    std::array<ClubSamplerVoice, NUM_SAMPLER_PADS> samplerPads;
+    std::array<std::unique_ptr<FlagshipChannelStrip>, NUM_DECKS> channels;
 
     std::atomic<float> crossfader{0.0f};
-    std::atomic<float> masterIsoLow{0.0f};
-    std::atomic<float> masterIsoMid{0.0f};
-    std::atomic<float> masterIsoHigh{0.0f};
-    std::atomic<bool> euphoBoostSendActive[3] = {false, false, false};
-    std::atomic<float> euphoBoostLevelDb{6.0f};
+    std::atomic<float> bgmDeckLevel{0.45f}; // Deck 2 (Background Deck) continuous groove level
+    std::atomic<float> masterIsoLow{0.0f}, masterIsoMid{0.0f}, masterIsoHigh{0.0f};
     std::atomic<float> neveTransformerDrive{0.65f};
-    std::atomic<bool> spectralSidechainEnabled{true}; // Auto-ducks clashing sub-bass & vocals across decks!
+    std::atomic<bool> neuralAutoMixEnabled{false};
 
-    std::atomic<int> beatFxType{static_cast<int>(BeatFxType::NONE)};
-    std::atomic<float> beatFxWetDry{0.0f};
-    std::atomic<float> beatFxTimeMs{375.0f};
-    double mMobiusPhase = 0.0;
-    double mFlangerPhase = 0.0;
-
-    std::atomic<bool> morphActive{false};
-    std::atomic<int> morphStyle{0};
-    std::atomic<float> morphProgressUI{0.0f};
-    double morphElapsedSamples = 0.0;
-    double morphTotalSamples = 48000.0 * 12.0;
-    int morphSourceDeck = 0;
-    int morphTargetDeck = 1;
-
-    std::array<std::atomic<float>, SPECTRUM_BANDS> masterSpectrum{};
+    std::string getBrainTelemetry() const;
 
 private:
     std::shared_ptr<oboe::AudioStream> mStream;
     double mSampleRate = 48000.0;
     RupertNeveTransformerBus mNeveTransformer;
     CytomicSvf64 mMasterIsoLowL, mMasterIsoLowR, mMasterIsoHighL, mMasterIsoHighR;
-    CytomicSvf64 mBeatFxSvfL, mBeatFxSvfR;
 
-    std::vector<double> mDelayLineL;
-    std::vector<double> mDelayLineR;
-    size_t mDelayWritePos = 0;
+    // 1.5GB OBB Memory-Mapped Neural Brain State
+    int mObbFd = -1;
+    const float* mObbMappedFloats = nullptr;
+    size_t mObbMappedBytes = 0;
+    size_t mObbBrainCursor = 0;
+    std::atomic<bool> mObbMapped{false};
+
+    // Dynamic Non-Fixed Neural Brain Auto-Mix State
+    double mBrainPhaseAccumulator = 0.0;
+    int mDominantLeadDeck = 0; // 0 = Deck A, 1 = Deck B
+    double mDynamicCrossfadeTarget = -1.0;
+    double mCurrentNeuralXf = -1.0;
+    std::string mActiveBrainStateText = "OBB Neural Brain Standby";
+
+    // Master WAV File Recorder State
+    std::mutex mRecMutex;
+    std::ofstream mRecFile;
+    std::atomic<bool> mRecordingActive{false};
+    uint32_t mRecordedDataBytes = 0;
+
     int mControlSubBlockCounter = 0;
 
-    void synthesizeClubSamplerBank(int sampleRate);
     void updateControlRateCoefficients(FlagshipChannelStrip& ch);
     void processChannelStrip64(FlagshipChannelStrip& ch, double subSidechainDuck, double vocalSidechainDuck, double& outL, double& outR);
-    void processMasterBeatFx64(double& masterL, double& masterR);
-    void updateArgonAiMorphAutomation(int numFrames);
+    void runDynamicObbBrainDirector(int numFrames);
 };
 
 } // namespace apexdj

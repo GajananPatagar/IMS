@@ -12,11 +12,11 @@ android {
         applicationId = "com.apexdj.butter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "10.0-Sovereign-15MB-App-Final-OBB"
+        versionCode = 12
+        versionName = "12.0-Neural-Brain-50MB-App-1.5GB-OBB"
 
         ndk {
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
 
         externalNativeBuild {
@@ -25,6 +25,10 @@ android {
                 arguments += listOf("-DANDROID_STL=c++_shared")
             }
         }
+    }
+
+    androidResources {
+        noCompress += listOf("bin", "onnx", "ort", "obb", "wav")
     }
 
     signingConfigs {
