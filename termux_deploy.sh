@@ -2,19 +2,19 @@
 set -e
 
 echo "================================================================="
-echo " APEX-DJ V8 // LIGHTWEIGHT APK + STANDALONE .OBB CLOUD BUILDER"
+echo " APEX-DJ V10 // CLEAN REPO DEPLOYMENT SCRIPT"
 echo "================================================================="
 
 pkg install -y git gh
 
-# Ensure no heavy files are inside APK assets so APK stays ~15MB!
-rm -rf app/src/main/assets/models
+# Purge ALL old/unnecessary setup scripts and clutter files automatically!
+rm -f setup_part*.sh update_chat*.sh fix_*.sh force_*.sh generate_*.sh upgrade_pro_neural.sh
 
 git add -A
-git commit -m "ApexDJ V8: Lightweight APK, Standalone Auto-Copy OBB, Safe Notification Bar, Stutter-Free 64-Bit DSP" || true
+git commit -m "ApexDJ V10 Sovereign: Cleaned old scripts, Permanent OBB Vault, 15MB Lightweight APK Build" || true
 git push -u origin HEAD
 
-echo "[+] Code pushed to GitHub. Waiting for cloud run to register..."
+echo "[+] Code pushed to GitHub successfully. Monitoring cloud build..."
 sleep 5
 
 RUN_ID=$(gh run list --limit 1 --json databaseId --jq '.[0].databaseId')
@@ -22,6 +22,6 @@ echo "[+] Watching GitHub Actions Run ID: $RUN_ID"
 gh run watch "$RUN_ID"
 
 mkdir -p /sdcard/Download/ApexDJ_Build
-gh run download "$RUN_ID" -n "ApexDJ-Flagship-1Crore-Edition-APK" -D /sdcard/Download/ApexDJ_Build/
-echo "[✓] SUCCESS! Lightweight APK & main.1.com.apexdj.butter.obb downloaded to: /sdcard/Download/ApexDJ_Build/"
+gh run download "$RUN_ID" -n "ApexDJ-15MB-Lightweight-APK" -D /sdcard/Download/ApexDJ_Build/
+echo "[✓] SUCCESS! 15MB Lightweight APK downloaded to: /sdcard/Download/ApexDJ_Build/"
 ls -lh /sdcard/Download/ApexDJ_Build/

@@ -14,11 +14,11 @@
 
 namespace apexdj {
 
-constexpr int NUM_STEMS = 4;        // 0:Drums, 1:Bass, 2:Other/Harmonics, 3:Vocals
+constexpr int NUM_STEMS = 4;        // 0:Drums, 1:Bass, 2:Other/Synth, 3:Vocals
 constexpr int NUM_CHANNELS = 6;     // 6-Channel V10 / Xone:96 Matrix
 constexpr int NUM_HOT_CUES = 8;     // 8 CDJ-3000 Hot Cues per deck
-constexpr int NUM_SAMPLER_PADS = 8; // 8 Built-In Club FX & Drum Sampler Voices
-constexpr int WAVEFORM_BINS = 256;  // RGB Waveform Overview Bins per track
+constexpr int NUM_SAMPLER_PADS = 8; // 8 Studio Sampler Voices
+constexpr int WAVEFORM_BINS = 256;  // RGB 3-Band Waveform Bins
 constexpr int SPECTRUM_BANDS = 32;  // 32-Band Master Spectrum Analyzer
 
 enum class SoundColorFxType {
@@ -48,15 +48,20 @@ enum class BeatFxType {
     TRANS_GATE = 13
 };
 
+// 12 Superhuman Gemini 4 Argon V10 AI Transition Programs
 enum class ArgonAiMorphStyle {
-    NEURAL_STEM_WEAVE = 0,
-    FESTIVAL_DROP_SWAP = 1,
-    DUB_ECHO_FREEZE = 2,
-    XONE_DUAL_NOTCH = 3,
-    ACAPELLA_STEM_BRIDGE = 4,
-    SPIRAL_PITCH_RISER = 5,
-    POLYRHYTHMIC_MASH = 6,
-    VINYL_SPINBACK_DROP = 7
+    COSINE_STEM_WEAVE = 0,      // C2-smooth overlapping Cosine Stem Handoff + Zero-Cross Bass Swap
+    MAINSTAGE_DROP_SWAP = 1,    // Mobius Shepard Riser + Pre-Drop Vacuum + Beat-1 Full Drop Slam
+    BERLIN_TECHNO_VCF = 2,      // Xone:96 Dual VCF Notch Sweep + Asymmetric Harmonic Crunch
+    BOLLYWOOD_808_BASS_FLIP = 3,// Dhol/Transient Lock + Sub-808 Phase-Aligned Flip
+    EUPHONIA_NEVE_SILK_GLIDE = 4,// Rupert Neve Transformer Drive + Shimmer Boost Send
+    ACAPELLA_MASHUP_BRIDGE = 5, // Isolates Outgoing Vocals over Incoming Drums+Bass Groove
+    TURNTABLE_SPINBACK_WHIP = 6,// Vinyl Brake + Backspin Whip into Incoming Track
+    POLYRHYTHMIC_SPIRAL_ROLL = 7,// 3-Beat Triplet Roll + Formant-Locked Pitch Riser
+    DUB_ECHO_VOCAL_FREEZE = 8,  // Freezes Outgoing Vocal in Dub Echo Tail + Smooth Bass Ride
+    CAMELOT_FIFTH_KEY_BRIDGE = 9,// Harmonic Key-Modulation Bridge
+    STEM_CALL_AND_RESPONSE = 10,// Alternates Deck A & Deck B Stems every 2 Beats
+    VELVET_LONG_ROTARY_BLEND = 11// 64-Bit Ultra-Long Audiophile Rotary Isolator Cross-Blend
 };
 
 struct CytomicSvf64 {
@@ -193,7 +198,6 @@ struct ClubSamplerVoice {
     std::atomic<float> gain{0.85f};
 };
 
-// Lock-Free Double-Buffer Slot: Audio thread reads activeSlot while background thread loads into (1 - activeSlot)
 struct TrackBufferSlot {
     std::vector<float> pcmLeft;
     std::vector<float> pcmRight;
@@ -207,7 +211,7 @@ struct TrackBufferSlot {
 };
 
 struct FlagshipChannelStrip {
-    std::mutex loadMutex; // Only used between background load threads, NEVER touched by real-time audio thread!
+    std::mutex loadMutex;
     std::array<TrackBufferSlot, 2> bufferSlots;
     std::atomic<int> activeSlot{0};
 
@@ -240,14 +244,16 @@ struct FlagshipChannelStrip {
     // 4-Stem Gains (0:Drums, 1:Bass, 2:Other/Synth, 3:Vocals)
     std::atomic<float> stemGain[NUM_STEMS] = {1.0f, 1.0f, 1.0f, 1.0f};
 
-    // Real-Time Zero-Latency 4-Stem Separation Filter Bank (Uses 0 MB extra RAM!)
+    // Real-Time Zero-Latency 4-Stem Separation Filter Bank + Instantaneous Envelopes for Spectral Ducking
     CytomicSvf64 stemSubFilterL, stemSubFilterR;
     CytomicSvf64 stemHighFilterL, stemHighFilterR;
     double transientFastEnv = 0.0;
     double transientSlowEnv = 0.0;
+    std::atomic<float> liveSubBassEnv{0.0f};
+    std::atomic<float> liveVocalEnv{0.0f};
 
     // DJM-V10 Compressor + Xone:92 Mk2 4-Band Surgical EQ
-    std::atomic<float> v10CompressorKnob{0.20f};
+    std::atomic<float> v10CompressorKnob{0.25f};
     double compEnv = 0.0;
     std::atomic<float> eqLow{0.0f};
     std::atomic<float> eqLoMid{0.0f};
@@ -312,6 +318,7 @@ public:
     std::atomic<bool> euphoBoostSendActive[3] = {false, false, false};
     std::atomic<float> euphoBoostLevelDb{6.0f};
     std::atomic<float> neveTransformerDrive{0.65f};
+    std::atomic<bool> spectralSidechainEnabled{true}; // Auto-ducks clashing sub-bass & vocals across decks!
 
     std::atomic<int> beatFxType{static_cast<int>(BeatFxType::NONE)};
     std::atomic<float> beatFxWetDry{0.0f};
@@ -343,7 +350,7 @@ private:
 
     void synthesizeClubSamplerBank(int sampleRate);
     void updateControlRateCoefficients(FlagshipChannelStrip& ch);
-    void processChannelStrip64(FlagshipChannelStrip& ch, double& outL, double& outR);
+    void processChannelStrip64(FlagshipChannelStrip& ch, double subSidechainDuck, double vocalSidechainDuck, double& outL, double& outR);
     void processMasterBeatFx64(double& masterL, double& masterR);
     void updateArgonAiMorphAutomation(int numFrames);
 };

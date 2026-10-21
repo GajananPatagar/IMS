@@ -2,13 +2,12 @@
 set -e
 
 echo "================================================================="
-echo " [CHAT 3/3] INSTALLING SAFE-INSET V8 PRO UI & DEPLOYMENT SCRIPT"
+echo " [CHAT 4/4] V10 SOVEREIGN: CLEANING REPO & INSTALLING FINAL UI"
 echo "================================================================="
 
 mkdir -p app/src/main/java/com/apexdj/butter/ui
-mkdir -p app/src/main/java/com/apexdj/butter
 
-echo "[1/4] Writing app/src/main/java/com/apexdj/butter/ui/HardwareCanvasComponents.kt..."
+echo "[1/3] Writing app/src/main/java/com/apexdj/butter/ui/HardwareCanvasComponents.kt..."
 cat << 'EOF' > app/src/main/java/com/apexdj/butter/ui/HardwareCanvasComponents.kt
 package com.apexdj.butter.ui
 
@@ -220,14 +219,13 @@ fun MasterSpectrumAnalyzer(
 }
 EOF
 
-echo "[2/4] Writing app/src/main/java/com/apexdj/butter/ui/FlagshipMixerScreen.kt..."
+echo "[2/3] Writing app/src/main/java/com/apexdj/butter/ui/FlagshipMixerScreen.kt..."
 cat << 'EOF' > app/src/main/java/com/apexdj/butter/ui/FlagshipMixerScreen.kt
 package com.apexdj.butter.ui
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -242,7 +240,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
@@ -260,14 +257,14 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<SongTrack>>(emptyList()) }
-    var statusBanner by remember { mutableStateOf("Gemini 4 Argon V8 Engine • Lock-Free 96kHz/64-Bit DSP Ready") }
-    var obbStatusText by remember { mutableStateOf("Auto-Scanning OBB Expansion...") }
+    var statusBanner by remember { mutableStateOf("V10 Sovereign Engine • 96kHz/64-Bit DSP • Permanent OBB Vault Ready") }
+    var obbStatusText by remember { mutableStateOf("Scanning OBB Expansion Vault...") }
 
-    // Cached waveforms & titles (updated ONLY on track load — zero 60fps JNI array allocation stutter!)
     val rgbWaveA by repo.waveDeckA.collectAsState()
     val rgbWaveB by repo.waveDeckB.collectAsState()
     val titleA by repo.trackTitleDeckA.collectAsState()
     val titleB by repo.trackTitleDeckB.collectAsState()
+    val autoDjOn by repo.autoDjEnabled.collectAsState()
 
     var crossfader by remember { mutableFloatStateOf(0f) }
     var neveDrive by remember { mutableFloatStateOf(0.65f) }
@@ -279,6 +276,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var boostHigh by remember { mutableStateOf(false) }
     var masterBeatFx by remember { mutableFloatStateOf(0f) }
     var masterBeatWet by remember { mutableFloatStateOf(0f) }
+    var spectralSidechain by remember { mutableStateOf(true) }
 
     var vuDeckA by remember { mutableFloatStateOf(0f) }
     var vuDeckB by remember { mutableFloatStateOf(0f) }
@@ -288,13 +286,13 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var keyDeckB by remember { mutableIntStateOf(8) }
     var playheadA by remember { mutableFloatStateOf(0f) }
     var playheadB by remember { mutableFloatStateOf(0f) }
-    var morphProgress by remember { mutableFloatStateOf(-1f) }
+
+    var selectedAiStyleId by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         val st = repo.obbManager.autoScanCopyAndMountObb()
         obbStatusText = st.statusMessage
 
-        // Lightweight 30fps scalar telemetry loop (no array allocations, zero GC pause!)
         while (true) {
             vuDeckA = repo.nativeGetChannelVu(0)
             vuDeckB = repo.nativeGetChannelVu(1)
@@ -304,7 +302,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             keyDeckB = repo.nativeGetCamelotKey(1)
             playheadA = repo.nativeGetPlayheadNormalized(0)
             playheadB = repo.nativeGetPlayheadNormalized(1)
-            morphProgress = repo.nativeGetMorphProgress()
             delay(33)
         }
     }
@@ -320,14 +317,13 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     val obbFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
-                obbStatusText = "Copying .OBB to /Android/obb/com.apexdj.butter/..."
+                obbStatusText = "Copying .OBB into official folder..."
                 val st = repo.obbManager.importAndCopyObbFromUri(uri)
                 obbStatusText = st.statusMessage
             }
         }
     }
 
-    // Safe Window Insets: Never overlaps the top Android notification bar or navigation bar!
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -338,7 +334,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             .padding(horizontal = 6.dp, vertical = 4.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Notification-Safe Top Telemetry Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -350,7 +345,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "APEX-DJ V8 // GEMINI 4 ARGON (V10-LF × DJM-A9 × EUPHONIA × XONE:96)",
+                    text = "APEX-DJ V10 // SOVEREIGN TOURING BOOTH + PERMANENT OBB VAULT",
                     color = Color(0xFF00E5FF),
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -371,36 +366,25 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     maxLines = 1
                 )
             }
-            Canvas(
-                modifier = Modifier
-                    .size(78.dp, 26.dp)
-                    .background(Color(0xFF05070B), RoundedCornerShape(4.dp))
-            ) {
-                val w = size.width
-                val h = size.height
-                drawLine(Color(0xFF00E5FF), Offset(0f, h * 0.35f), Offset(w * vuDeckA.coerceIn(0f, 1f), h * 0.35f), strokeWidth = 6f)
-                drawLine(Color(0xFFFA903E), Offset(0f, h * 0.75f), Offset(w * vuDeckB.coerceIn(0f, 1f), h * 0.75f), strokeWidth = 6f)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = { repo.setAutoDjMode(!autoDjOn) },
+                    modifier = Modifier.height(26.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (autoDjOn) Color(0xFFF538A0) else Color(0xFF21262D))
+                ) {
+                    Text(if (autoDjOn) "AI AUTO-DJ: ON" else "AI AUTO-DJ: OFF", fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                }
             }
-        }
-
-        if (morphProgress >= 0f) {
-            Spacer(modifier = Modifier.height(3.dp))
-            LinearProgressIndicator(
-                progress = { morphProgress.coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().height(5.dp),
-                color = Color(0xFFF538A0),
-                trackColor = Color(0xFF1F2430)
-            )
         }
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // 4-Workspace Navigation Bar
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TabButton("1. PRO CONSOLE", selectedTab == 0, Modifier.weight(1f)) { selectedTab = 0 }
             TabButton("2. 6-ENGINE REMIX CRATE", selectedTab == 1, Modifier.weight(1f)) { selectedTab = 1 }
-            TabButton("3. 8-PAD SAMPLER & OBB", selectedTab == 2, Modifier.weight(1f)) { selectedTab = 2 }
-            TabButton("4. ARGON AI COPILOT", selectedTab == 3, Modifier.weight(1f)) { selectedTab = 3 }
+            TabButton("3. 8-PAD SAMPLER & OBB VAULT", selectedTab == 2, Modifier.weight(1f)) { selectedTab = 2 }
+            TabButton("4. 12-STYLE ARGON AI COPILOT", selectedTab == 3, Modifier.weight(1f)) { selectedTab = 3 }
         }
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -408,28 +392,8 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
         when (selectedTab) {
             0 -> {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DeckConsoleCard(
-                        deckIndex = 0,
-                        title = "DECK A // $titleA",
-                        accent = Color(0xFF00E5FF),
-                        bpm = bpmDeckA,
-                        camelotKey = keyDeckA,
-                        playheadNorm = playheadA,
-                        rgbWave = rgbWaveA,
-                        repo = repo,
-                        modifier = Modifier.weight(1f)
-                    )
-                    DeckConsoleCard(
-                        deckIndex = 1,
-                        title = "DECK B // $titleB",
-                        accent = Color(0xFFFA903E),
-                        bpm = bpmDeckB,
-                        camelotKey = keyDeckB,
-                        playheadNorm = playheadB,
-                        rgbWave = rgbWaveB,
-                        repo = repo,
-                        modifier = Modifier.weight(1f)
-                    )
+                    DeckConsoleCard(0, "DECK A // $titleA", Color(0xFF00E5FF), bpmDeckA, keyDeckA, playheadA, rgbWaveA, repo, Modifier.weight(1f))
+                    DeckConsoleCard(1, "DECK B // $titleB", Color(0xFFFA903E), bpmDeckB, keyDeckB, playheadB, rgbWaveB, repo, Modifier.weight(1f))
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -447,20 +411,20 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "MASTER BUS // RUPERT NEVE TRANSFORMER • EUPHONIA BOOST SEND • COSINE BUTTER MORPH",
+                            text = "MASTER BUS // RUPERT NEVE TRANSFORMER • SPECTRAL SIDECHAIN • 12 AI TRANSITIONS",
                             color = Color(0xFFFCC934),
                             fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            BoostSendChip("SIDECHAIN", spectralSidechain) {
+                                spectralSidechain = !spectralSidechain
+                                repo.nativeSetMasterParam(11, if (spectralSidechain) 1f else 0f)
+                            }
                             BoostSendChip("BOOST LO", boostLow) {
                                 boostLow = !boostLow
                                 repo.nativeSetMasterParam(5, if (boostLow) 1f else 0f)
-                            }
-                            BoostSendChip("BOOST MID", boostMid) {
-                                boostMid = !boostMid
-                                repo.nativeSetMasterParam(6, if (boostMid) 1f else 0f)
                             }
                             BoostSendChip("BOOST HI", boostHigh) {
                                 boostHigh = !boostHigh
@@ -487,12 +451,12 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Button(
                             onClick = {
-                                repo.nativeTriggerButterMorph(0, 1, 12.0, 0)
-                                statusBanner = "Cosine S-Curve Butter Morph A ➔ B Active (Beat-Phase Locked)"
+                                repo.nativeTriggerButterMorph(0, 1, 14.0, selectedAiStyleId)
+                                statusBanner = "Executing AI Morph A ➔ B (Style $selectedAiStyleId)"
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF538A0))
                         ) {
-                            Text("BUTTER MORPH A ➔ B", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text("AI MORPH A ➔ B", fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.width(6.dp))
                         Slider(
@@ -504,12 +468,12 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Button(
                             onClick = {
-                                repo.nativeTriggerButterMorph(1, 0, 12.0, 0)
-                                statusBanner = "Cosine S-Curve Butter Morph B ➔ A Active (Beat-Phase Locked)"
+                                repo.nativeTriggerButterMorph(1, 0, 14.0, selectedAiStyleId)
+                                statusBanner = "Executing AI Morph B ➔ A (Style $selectedAiStyleId)"
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))
                         ) {
-                            Text("BUTTER MORPH B ➔ A", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text("AI MORPH B ➔ A", fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -523,7 +487,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                         .padding(6.dp)
                 ) {
                     Text(
-                        text = "6-ENGINE PARALLEL REMIX SEARCH (HEARTHIS • JIOSAAVN • AUDIUS • PIPED • ARCHIVE • LOCAL)",
+                        text = "6-ENGINE FEDERATED REMIX SEARCH (HEARTHIS • JIOSAAVN • AUDIUS • PIPED • ARCHIVE • LOCAL)",
                         color = Color(0xFF00E5FF),
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
@@ -608,7 +572,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                         .padding(8.dp)
                 ) {
                     Text(
-                        text = "8-PAD 96kHz CLUB SAMPLER & AUTOMATIC .OBB EXPANSION MANAGER",
+                        text = "8-PAD 96kHz CLUB SAMPLER & PERMANENT FINAL .OBB VAULT MANAGER",
                         color = Color(0xFFFCC934),
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
@@ -635,27 +599,31 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     }
 
                     HorizontalDivider(color = Color(0xFF21262D), modifier = Modifier.padding(vertical = 8.dp))
-                    Text("PUBG / FREEFIRE STYLE .OBB AUTO-SCANNER & AUTO-COPIER", color = Color(0xFF00E5FF), fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text("PERMANENT OBB VAULT SYNC & CLOUD RESTORE", color = Color(0xFF00E5FF), fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     Text(obbStatusText, color = Color(0xFF57AB5A), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Button(
                             onClick = {
                                 scope.launch {
-                                    obbStatusText = "Scanning Download/ApexDJ_Build & copying to /Android/obb/..."
+                                    obbStatusText = "Scanning & mounting local Final OBB Vault..."
                                     val st = repo.obbManager.autoScanCopyAndMountObb()
                                     obbStatusText = st.statusMessage
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))
                         ) {
-                            Text("AUTO-SCAN & COPY .OBB NOW", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text("AUTO-SCAN OBB VAULT", fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                         Button(
-                            onClick = { obbFilePicker.launch("*/*") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D333B))
+                            onClick = {
+                                scope.launch {
+                                    repo.obbManager.downloadFinalObbFromGitHubRelease { msg -> obbStatusText = msg }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF538A0))
                         ) {
-                            Text("SELECT .OBB FILE MANUALLY", fontSize = 9.sp)
+                            Text("DOWNLOAD OBB FROM GITHUB", fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -669,7 +637,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                         .padding(8.dp)
                 ) {
                     Text(
-                        text = "GEMINI 4 ARGON // AUTONOMOUS AI DJ TRANSITION & CAMELOT HARMONIC COPILOT",
+                        text = "12-STYLE GEMINI 4 ARGON V10 // AI TRANSITION PROGRAMS & HARMONIC COPILOT",
                         color = Color(0xFF00E5FF),
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
@@ -681,32 +649,58 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
                     Text("Harmonic Match Score: ${aiRec.compatibilityScore}%", color = Color(0xFF57AB5A), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Text("Camelot Wheel Relation: ${aiRec.harmonicRelation}", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    Text("Selected Morph Engine: ${aiRec.recommendedStyleName}", color = Color(0xFFFCC934), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("Auto-Selected Style: ${aiRec.recommendedStyleName}", color = Color(0xFFFCC934), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                     Text(aiRec.summaryText, color = Color(0xFF8B949E), fontSize = 9.sp)
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Select Any of the 12 Superhuman AI Transition Styles:", color = Color.LightGray, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    LazyColumn(modifier = Modifier.fillMaxWidth().height(140.dp).background(Color(0xFF05070B), RoundedCornerShape(4.dp)).padding(4.dp)) {
+                        items(OnlineAndLocalRepository.AI_MORPH_STYLE_NAMES.indices.toList()) { idx ->
+                            val sName = OnlineAndLocalRepository.AI_MORPH_STYLE_NAMES[idx]
+                            val isSel = (selectedAiStyleId == idx)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(sName, color = if (isSel) Color(0xFF00E5FF) else Color.White, fontSize = 9.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal)
+                                Button(
+                                    onClick = { selectedAiStyleId = idx; statusBanner = "Selected AI Style: $sName" },
+                                    modifier = Modifier.height(22.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = if (isSel) Color(0xFF1A73E8) else Color(0xFF21262D))
+                                ) {
+                                    Text(if (isSel) "SELECTED" else "SELECT", fontSize = 7.sp)
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Button(
                             onClick = {
-                                repo.nativeTriggerButterMorph(0, 1, 14.0, aiRec.recommendedStyleId)
-                                statusBanner = "Argon AI Mixing Deck A ➔ Deck B (${aiRec.recommendedStyleName})"
+                                repo.nativeTriggerButterMorph(0, 1, 14.0, selectedAiStyleId)
+                                statusBanner = "Executing AI Style $selectedAiStyleId (A ➔ B)"
                                 selectedTab = 0
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF538A0))
                         ) {
-                            Text("AI AUTO-MIX A ➔ B (14s)", fontWeight = FontWeight.Bold, fontSize = 9.sp)
+                            Text("RUN SELECTED AI MORPH A ➔ B", fontWeight = FontWeight.Bold, fontSize = 9.sp)
                         }
                         Button(
                             onClick = {
-                                repo.nativeTriggerButterMorph(1, 0, 14.0, aiRec.recommendedStyleId)
-                                statusBanner = "Argon AI Mixing Deck B ➔ Deck A (${aiRec.recommendedStyleName})"
+                                repo.nativeTriggerButterMorph(1, 0, 14.0, selectedAiStyleId)
+                                statusBanner = "Executing AI Style $selectedAiStyleId (B ➔ A)"
                                 selectedTab = 0
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))
                         ) {
-                            Text("AI AUTO-MIX B ➔ A (14s)", fontWeight = FontWeight.Bold, fontSize = 9.sp)
+                            Text("RUN SELECTED AI MORPH B ➔ A", fontWeight = FontWeight.Bold, fontSize = 9.sp)
                         }
                     }
                 }
@@ -807,7 +801,6 @@ fun DeckConsoleCard(
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        // CDJ-3000 Touch Jogwheel + Pitch Slider Row
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Box(
                 modifier = Modifier
@@ -837,7 +830,6 @@ fun DeckConsoleCard(
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        // Real-Time 4-Stem Knobs + 4-Band Surgical EQ Knobs
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             RotaryKnob3D("DRUMS", stemDrums, false, Color(0xFF00E5FF), Modifier.weight(1f)) { stemDrums = it; repo.nativeSetChannelParam(deckIndex, 9, it) }
             RotaryKnob3D("BASS", stemBass, false, Color(0xFFFF5252), Modifier.weight(1f)) { stemBass = it; repo.nativeSetChannelParam(deckIndex, 10, it) }
@@ -862,7 +854,6 @@ fun DeckConsoleCard(
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        // Hot Cues & Beat Loops Row
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             for (c in 0 until 4) {
                 Button(
@@ -885,75 +876,25 @@ fun DeckConsoleCard(
 }
 EOF
 
-echo "[3/4] Writing app/src/main/java/com/apexdj/butter/MainActivity.kt (Safe System Bars + Auto-OBB Permissions)..."
-cat << 'EOF' > app/src/main/java/com/apexdj/butter/MainActivity.kt
-package com.apexdj.butter
-
-import android.Manifest
-import android.os.Build
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.view.WindowCompat
-import androidx.lifecycle.lifecycleScope
-import com.apexdj.butter.audio.OnlineAndLocalRepository
-import com.apexdj.butter.ui.FlagshipMixerScreen
-import kotlinx.coroutines.launch
-
-class MainActivity : ComponentActivity() {
-    private lateinit var repository: OnlineAndLocalRepository
-
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) {
-        lifecycleScope.launch {
-            repository.obbManager.autoScanCopyAndMountObb()
-        }
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        // Ensure UI respects Android top notification bar & navigation bar!
-        WindowCompat.setDecorFitsSystemWindows(window, true)
-
-        repository = OnlineAndLocalRepository(applicationContext)
-
-        // Request audio/storage permissions so autoScanCopyAndMountObb can read Download/ApexDJ_Build automatically
-        val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            arrayOf(Manifest.permission.READ_MEDIA_AUDIO)
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        }
-        permissionLauncher.launch(perms)
-
-        setContent {
-            FlagshipMixerScreen(repo = repository)
-        }
-    }
-}
-EOF
-
-echo "[4/4] Writing termux_deploy.sh (Lightweight APK + Standalone OBB Cloud Builder)..."
+echo "[3/3] Writing clean termux_deploy.sh (Purges old scripts, builds 15MB APK, reuses Final OBB)..."
 cat << 'EOF' > termux_deploy.sh
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
 
 echo "================================================================="
-echo " APEX-DJ V8 // LIGHTWEIGHT APK + STANDALONE .OBB CLOUD BUILDER"
+echo " APEX-DJ V10 // CLEAN REPO DEPLOYMENT SCRIPT"
 echo "================================================================="
 
 pkg install -y git gh
 
-# Ensure no heavy files are inside APK assets so APK stays ~15MB!
-rm -rf app/src/main/assets/models
+# Purge ALL old/unnecessary setup scripts and clutter files automatically!
+rm -f setup_part*.sh update_chat*.sh fix_*.sh force_*.sh generate_*.sh upgrade_pro_neural.sh
 
 git add -A
-git commit -m "ApexDJ V8: Lightweight APK, Standalone Auto-Copy OBB, Safe Notification Bar, Stutter-Free 64-Bit DSP" || true
+git commit -m "ApexDJ V10 Sovereign: Cleaned old scripts, Permanent OBB Vault, 15MB Lightweight APK Build" || true
 git push -u origin HEAD
 
-echo "[+] Code pushed to GitHub. Waiting for cloud run to register..."
+echo "[+] Code pushed to GitHub successfully. Monitoring cloud build..."
 sleep 5
 
 RUN_ID=$(gh run list --limit 1 --json databaseId --jq '.[0].databaseId')
@@ -961,14 +902,14 @@ echo "[+] Watching GitHub Actions Run ID: $RUN_ID"
 gh run watch "$RUN_ID"
 
 mkdir -p /sdcard/Download/ApexDJ_Build
-gh run download "$RUN_ID" -n "ApexDJ-Flagship-1Crore-Edition-APK" -D /sdcard/Download/ApexDJ_Build/
-echo "[✓] SUCCESS! Lightweight APK & main.1.com.apexdj.butter.obb downloaded to: /sdcard/Download/ApexDJ_Build/"
+gh run download "$RUN_ID" -n "ApexDJ-15MB-Lightweight-APK" -D /sdcard/Download/ApexDJ_Build/
+echo "[✓] SUCCESS! 15MB Lightweight APK downloaded to: /sdcard/Download/ApexDJ_Build/"
 ls -lh /sdcard/Download/ApexDJ_Build/
 EOF
 chmod +x termux_deploy.sh
 
-echo "[✓] ALL 3 CHATS COMPLETE!"
+echo "[✓] ALL 4 CHATS COMPLETE! Repository cleaned of old files."
 echo "================================================================="
-echo " RUN THIS COMMAND IN TERMUX NOW TO BUILD & DOWNLOAD:"
+echo " RUN THIS COMMAND IN TERMUX TO BUILD & DOWNLOAD YOUR 15MB APK:"
 echo " ./termux_deploy.sh"
 echo "================================================================="

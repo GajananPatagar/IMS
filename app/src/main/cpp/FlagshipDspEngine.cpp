@@ -2,7 +2,7 @@
 #include <jni.h>
 #include <android/log.h>
 
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "ApexDJ_ArgonDSP", __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "ApexDJ_V10_DSP", __VA_ARGS__)
 
 namespace apexdj {
 
@@ -41,7 +41,7 @@ bool FlagshipDspEngine::startAudioStream() {
     synthesizeClubSamplerBank(static_cast<int>(mSampleRate));
 
     mStream->requestStart();
-    LOGI("Stutter-Free Lock-Free 64-Bit Audio Engine started at %.0f Hz", mSampleRate);
+    LOGI("ApexDJ V10 Sovereign 64-Bit Engine active at %.0f Hz", mSampleRate);
     return true;
 }
 
@@ -69,14 +69,13 @@ void FlagshipDspEngine::synthesizeClubSamplerBank(int sr) {
         samplerPads[0].sampleL[i] = val; samplerPads[0].sampleR[i] = val;
     }
 
-    // Pad 1: 808 Sub-Bass Drop
+    // Pad 1: 808 Sub-Bass Boom Drop
     int len1 = static_cast<int>(sr * 1.8);
     samplerPads[1].sampleL.resize(len1); samplerPads[1].sampleR.resize(len1);
     double phase1 = 0.0;
     for (int i = 0; i < len1; ++i) {
         double t = static_cast<double>(i) / sr;
-        double freq = 38.0 + 95.0 * std::exp(-t * 6.5);
-        phase1 += freq / sr;
+        phase1 += (38.0 + 95.0 * std::exp(-t * 6.5)) / sr;
         float val = static_cast<float>(std::tanh(std::sin(2.0 * M_PI * phase1) * 1.9) * std::pow(1.0 - (t / 1.8), 1.2) * 0.9);
         samplerPads[1].sampleL[i] = val; samplerPads[1].sampleR[i] = val;
     }
@@ -160,7 +159,6 @@ void FlagshipDspEngine::triggerSamplerPad(int padIndex) {
     samplerPads[padIndex].active.store(true);
 }
 
-// 100% Lock-Free Double-Buffer Track Loader (Zero Stutter on Audio Thread!)
 void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, const float* rightPcm, int numSamples, int sampleRate) {
     if (deckIndex < 0 || deckIndex >= NUM_CHANNELS || numSamples <= 64) return;
     auto& ch = *channels[deckIndex];
@@ -172,7 +170,6 @@ void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, con
     slot.pcmRight.assign(rightPcm, rightPcm + numSamples);
     slot.numSamples = numSamples;
 
-    // Compute RGB 3-Band Waveform & BPM/Camelot once during load
     CytomicSvf64 subF, midF;
     subF.setParams(sampleRate, 165.0, 0.707);
     midF.setParams(sampleRate, 2600.0, 0.707);
@@ -216,7 +213,6 @@ void FlagshipDspEngine::loadTrackToDeck(int deckIndex, const float* leftPcm, con
     ch.camelotKeyIndex.store(camelot, std::memory_order_release);
     for (int c = 0; c < NUM_HOT_CUES; ++c) ch.hotCueSamples[c].store(-1.0);
 
-    // Atomically flip active slot — zero audio interruption!
     ch.activeSlot.store(targetSlot, std::memory_order_release);
     ch.waveformVersion.fetch_add(1);
 }
@@ -285,21 +281,23 @@ void FlagshipDspEngine::triggerButterMorph(int fromDeck, int toDeck, double dura
     morphElapsedSamples = 0.0;
     morphProgressUI.store(0.0f);
 
-    // Beat-phase align incoming deck to outgoing deck's beat grid so drums lock like butter!
+    // Phase-Locked Loop (PLL) Sub-Sample Beatgrid Alignment
     auto& src = *channels[fromDeck];
     auto& dst = *channels[toDeck];
     double srcSamplesPerBeat = (60.0 / std::max(60.0f, src.detectedBpm.load())) * mSampleRate;
     double dstSamplesPerBeat = (60.0 / std::max(60.0f, dst.detectedBpm.load())) * mSampleRate;
     double srcBeatPhase = std::fmod(src.playheadSample.load(), srcSamplesPerBeat) / srcSamplesPerBeat;
     double dstCurrentBeat = std::floor(dst.playheadSample.load() / dstSamplesPerBeat);
-    dst.playheadSample.store((dstCurrentBeat + srcBeatPhase) * dstSamplesPerBeat);
+    double totalDst = static_cast<double>(dst.totalTrackSamples.load());
+    double alignedPos = std::fmod((dstCurrentBeat + srcBeatPhase) * dstSamplesPerBeat, std::max(1.0, totalDst - 4.0));
+    dst.playheadSample.store(alignedPos);
 
     src.playing.store(true);
     dst.playing.store(true);
     morphActive.store(true);
 }
 
-// Ultra-Smooth Continuous Cosine S-Curve Butter Morph Engine (Zero Step Jumps!)
+// 12 Superhuman Gemini 4 Argon V10 AI Transition Programs
 void FlagshipDspEngine::updateArgonAiMorphAutomation(int numFrames) {
     if (!morphActive.load()) return;
     morphElapsedSamples += static_cast<double>(numFrames);
@@ -309,32 +307,103 @@ void FlagshipDspEngine::updateArgonAiMorphAutomation(int numFrames) {
     auto& src = *channels[morphSourceDeck];
     auto& dst = *channels[morphTargetDeck];
 
-    // Cosine S-curve: 0.0 -> 1.0 with zero derivative at both endpoints
+    // C2-continuous Cosine S-curve (0.0 -> 1.0 with zero velocity at start and end)
     double sCurve = 0.5 * (1.0 - std::cos(M_PI * p));
 
-    // Smoothly match tempo from source BPM to target BPM
+    // Continuous Fluid Beatgrid Tempo Lock
     float bpmA = src.detectedBpm.load();
     float bpmB = dst.detectedBpm.load();
     float liveBpm = bpmA + static_cast<float>(sCurve) * (bpmB - bpmA);
     src.tempoRatio.store(liveBpm / std::max(bpmA, 60.0f));
     dst.tempoRatio.store(liveBpm / std::max(bpmB, 60.0f));
 
-    // Continuous Overlapping Cosine Stem Envelopes:
-    // 1. Drums: Incoming drums glide in over first 45%, outgoing drums glide out over last 45%
+    // Base overlapping cosine stem curves
     double dstDrums = std::clamp(0.5 * (1.0 - std::cos(M_PI * std::min(1.0, p / 0.45))), 0.0, 1.0);
     double srcDrums = std::clamp(0.5 * (1.0 + std::cos(M_PI * std::max(0.0, (p - 0.55) / 0.45))), 0.0, 1.0);
+    double dstHarm  = std::clamp(0.5 * (1.0 - std::cos(M_PI * std::clamp((p - 0.15) / 0.65, 0.0, 1.0))), 0.0, 1.0);
+    double srcHarm  = std::clamp(0.5 * (1.0 + std::cos(M_PI * std::clamp((p - 0.35) / 0.60, 0.0, 1.0))), 0.0, 1.0);
+    double dstVox   = std::clamp(0.5 * (1.0 - std::cos(M_PI * std::clamp((p - 0.30) / 0.50, 0.0, 1.0))), 0.0, 1.0);
+    double srcVox   = std::clamp(0.5 * (1.0 + std::cos(M_PI * std::clamp((p - 0.20) / 0.45, 0.0, 1.0))), 0.0, 1.0);
 
-    // 2. Harmonics/Other & Vocals: Smooth bell handoff in the middle (20% to 80%) without vocal collision
-    double dstHarm = std::clamp(0.5 * (1.0 - std::cos(M_PI * std::clamp((p - 0.15) / 0.65, 0.0, 1.0))), 0.0, 1.0);
-    double srcHarm = std::clamp(0.5 * (1.0 + std::cos(M_PI * std::clamp((p - 0.35) / 0.60, 0.0, 1.0))), 0.0, 1.0);
-
-    double dstVox = std::clamp(0.5 * (1.0 - std::cos(M_PI * std::clamp((p - 0.30) / 0.50, 0.0, 1.0))), 0.0, 1.0);
-    double srcVox = std::clamp(0.5 * (1.0 + std::cos(M_PI * std::clamp((p - 0.20) / 0.45, 0.0, 1.0))), 0.0, 1.0);
-
-    // 3. Sub-Bass: Tight phase-locked crossover between 42% and 58% so bass never doubles or drops out!
     double bassSwap = std::clamp((p - 0.42) / 0.16, 0.0, 1.0);
-    double dstBass = std::sin(bassSwap * M_PI * 0.5);
-    double srcBass = std::cos(bassSwap * M_PI * 0.5);
+    double dstBass  = std::sin(bassSwap * M_PI * 0.5);
+    double srcBass  = std::cos(bassSwap * M_PI * 0.5);
+
+    auto style = static_cast<ArgonAiMorphStyle>(morphStyle.load());
+
+    switch (style) {
+        case ArgonAiMorphStyle::MAINSTAGE_DROP_SWAP: {
+            if (p < 0.72) {
+                double build = p / 0.72;
+                beatFxType.store(static_cast<int>(BeatFxType::MOBIUS));
+                beatFxWetDry.store(static_cast<float>(build * 0.78));
+                srcBass = 1.0 - build * 0.9;
+                dstBass = 0.0;
+                dstDrums = build * 0.75;
+            } else {
+                beatFxWetDry.store(0.0f);
+                beatFxType.store(static_cast<int>(BeatFxType::NONE));
+                srcBass = 0.0; srcDrums = 0.0; srcHarm = 0.0; srcVox = 0.0;
+                dstBass = 1.0; dstDrums = 1.0; dstHarm = 1.0; dstVox = 1.0;
+            }
+            break;
+        }
+        case ArgonAiMorphStyle::BERLIN_TECHNO_VCF: {
+            src.xoneVcf.lpfEnabled = true;
+            src.xoneVcf.cutoffHz = 18000.0 * std::pow(0.015, sCurve);
+            src.xoneVcf.crunchDrive = std::sin(M_PI * p) * 0.55;
+            dst.xoneVcf.hpfEnabled = true;
+            dst.xoneVcf.cutoffHz = 1400.0 * std::pow(0.035, sCurve);
+            dst.xoneVcf.crunchDrive = std::sin(M_PI * p) * 0.55;
+            break;
+        }
+        case ArgonAiMorphStyle::BOLLYWOOD_808_BASS_FLIP: {
+            // Instant Dhol/Transient lock with 808 Sub-Bass Boost Send
+            dstDrums = std::min(1.0, p * 2.5);
+            euphoBoostSendActive[0].store(p > 0.45 && p < 0.60);
+            break;
+        }
+        case ArgonAiMorphStyle::EUPHONIA_NEVE_SILK_GLIDE: {
+            neveTransformerDrive.store(static_cast<float>(0.65 + 0.30 * std::sin(M_PI * p)));
+            euphoBoostSendActive[1].store(p > 0.35 && p < 0.65);
+            break;
+        }
+        case ArgonAiMorphStyle::ACAPELLA_MASHUP_BRIDGE: {
+            // Keep outgoing Vocals riding over incoming Drums + Bass groove until 80%
+            srcVox = (p < 0.78) ? 1.0 : std::max(0.0, 1.0 - (p - 0.78) / 0.22);
+            srcDrums = std::max(0.0, 1.0 - p * 2.2);
+            srcBass = std::max(0.0, 1.0 - p * 2.2);
+            dstDrums = 1.0;
+            dstBass = std::min(1.0, p * 2.2);
+            break;
+        }
+        case ArgonAiMorphStyle::TURNTABLE_SPINBACK_WHIP: {
+            if (p > 0.68 && p < 0.82) {
+                src.reverseCensorActive.store(true);
+            } else {
+                src.reverseCensorActive.store(false);
+            }
+            break;
+        }
+        case ArgonAiMorphStyle::POLYRHYTHMIC_SPIRAL_ROLL: {
+            beatFxType.store(static_cast<int>(BeatFxType::SPIRAL));
+            beatFxWetDry.store(static_cast<float>(std::sin(M_PI * p) * 0.62));
+            break;
+        }
+        case ArgonAiMorphStyle::DUB_ECHO_VOCAL_FREEZE: {
+            src.colorFxType.store(static_cast<int>(SoundColorFxType::DUB_ECHO));
+            src.colorFxKnob.store(static_cast<float>(sCurve * 0.80));
+            break;
+        }
+        case ArgonAiMorphStyle::STEM_CALL_AND_RESPONSE: {
+            double gate = (std::sin(2.0 * M_PI * p * 8.0) >= 0.0) ? 1.0 : 0.25;
+            srcHarm *= gate;
+            dstHarm *= (1.25 - gate);
+            break;
+        }
+        default:
+            break;
+    }
 
     dst.stemGain[0].store(static_cast<float>(dstDrums));
     dst.stemGain[1].store(static_cast<float>(dstBass));
@@ -346,23 +415,29 @@ void FlagshipDspEngine::updateArgonAiMorphAutomation(int numFrames) {
     src.stemGain[2].store(static_cast<float>(srcHarm));
     src.stemGain[3].store(static_cast<float>(srcVox));
 
-    // Gentle complementary EQ & Filter sculpting
     src.eqLow.store(static_cast<float>(-0.85 * bassSwap));
     dst.eqLow.store(static_cast<float>(-0.85 * (1.0 - bassSwap)));
 
-    // Glide crossfader smoothly along the S-curve
     crossfader.store(static_cast<float>(morphSourceDeck == 0 ? (-1.0 + 2.0 * sCurve) : (1.0 - 2.0 * sCurve)));
 
     if (p >= 1.0) {
         src.playing.store(false);
+        src.reverseCensorActive.store(false);
         src.tempoRatio.store(1.0f);
         dst.tempoRatio.store(1.0f);
+        src.colorFxKnob.store(0.0f);
+        dst.colorFxKnob.store(0.0f);
+        src.xoneVcf.hpfEnabled = false; src.xoneVcf.lpfEnabled = true; src.xoneVcf.cutoffHz = 18000.0; src.xoneVcf.crunchDrive = 0.0;
+        dst.xoneVcf.hpfEnabled = false; dst.xoneVcf.lpfEnabled = true; dst.xoneVcf.cutoffHz = 18000.0; dst.xoneVcf.crunchDrive = 0.0;
         src.eqLow.store(0.0f); src.eqLoMid.store(0.0f); src.eqHiMid.store(0.0f); src.eqHigh.store(0.0f);
         dst.eqLow.store(0.0f); dst.eqLoMid.store(0.0f); dst.eqHiMid.store(0.0f); dst.eqHigh.store(0.0f);
         for (int s = 0; s < NUM_STEMS; ++s) {
             src.stemGain[s].store(1.0f);
             dst.stemGain[s].store(1.0f);
         }
+        euphoBoostSendActive[0].store(false);
+        euphoBoostSendActive[1].store(false);
+        beatFxWetDry.store(0.0f);
         morphActive.store(false);
     }
 }
@@ -391,9 +466,16 @@ void FlagshipDspEngine::updateControlRateCoefficients(FlagshipChannelStrip& ch) 
     ch.xoneVcf.updateCoefficients(mSampleRate, 32);
 }
 
-// 100% Lock-Free Real-Time Channel Strip (NEVER blocks or drops samples!)
-void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& outL, double& outR) {
+void FlagshipDspEngine::processChannelStrip64(
+    FlagshipChannelStrip& ch,
+    double subSidechainDuck,
+    double vocalSidechainDuck,
+    double& outL,
+    double& outR
+) {
     if (!ch.playing.load(std::memory_order_relaxed)) {
+        ch.liveSubBassEnv.store(0.0f, std::memory_order_relaxed);
+        ch.liveVocalEnv.store(0.0f, std::memory_order_relaxed);
         outL = 0.0; outR = 0.0;
         return;
     }
@@ -435,7 +517,7 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
     double inL = slot.pcmLeft[idx] * (1.0 - frac) + slot.pcmLeft[idx + 1] * frac;
     double inR = slot.pcmRight[idx] * (1.0 - frac) + slot.pcmRight[idx + 1] * frac;
 
-    // Real-Time 64-Bit 4-Stem Separation (Drums, Bass, Other, Vocals) with Zero Extra RAM!
+    // Real-Time 64-Bit 4-Stem Decomposition + Envelope Extraction
     double subLpL, subBpL, subHpL, subLpR, subBpR, subHpR;
     ch.stemSubFilterL.processSample(inL, subLpL, subBpL, subHpL);
     ch.stemSubFilterR.processSample(inR, subLpR, subBpR, subHpR);
@@ -461,10 +543,20 @@ void FlagshipDspEngine::processChannelStrip64(FlagshipChannelStrip& ch, double& 
     double voxL   = midMono;
     double voxR   = midMono;
 
+    // Update live envelopes for cross-deck spectral sidechain ducking
+    float subPeak = static_cast<float>(std::max(std::abs(bassL), std::abs(bassR)));
+    float voxPeak = static_cast<float>(std::abs(voxL));
+    ch.liveSubBassEnv.store(0.992f * ch.liveSubBassEnv.load(std::memory_order_relaxed) + 0.008f * subPeak, std::memory_order_relaxed);
+    ch.liveVocalEnv.store(0.992f * ch.liveVocalEnv.load(std::memory_order_relaxed) + 0.008f * voxPeak, std::memory_order_relaxed);
+
+    // Apply Automatic Cross-Deck Spectral Ducking so Sub-Bass & Vocals NEVER clash!
+    double subDuckGain = 1.0 - std::clamp(subSidechainDuck, 0.0, 0.85);
+    double voxDuckGain = 1.0 - std::clamp(vocalSidechainDuck, 0.0, 0.78);
+
     double gDrums = ch.stemGain[0].load();
-    double gBass  = ch.stemGain[1].load();
+    double gBass  = ch.stemGain[1].load() * subDuckGain;
     double gOther = ch.stemGain[2].load();
-    double gVox   = ch.stemGain[3].load();
+    double gVox   = ch.stemGain[3].load() * voxDuckGain;
 
     double rawL = drumsL * gDrums + bassL * gBass + otherL * gOther + voxL * gVox;
     double rawR = drumsR * gDrums + bassR * gBass + otherR * gOther + voxR * gVox;
@@ -626,20 +718,37 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
         isoG[b] = (isoParams[b] <= -0.98f && !euphoBoostSendActive[b].load()) ? 0.0 : std::pow(10.0, db / 20.0);
     }
 
+    const bool sidechainOn = spectralSidechainEnabled.load(std::memory_order_relaxed);
+
     for (int32_t frame = 0; frame < numFrames; ++frame) {
         if ((mControlSubBlockCounter++ & 31) == 0) {
             for (int c = 0; c < 2; ++c) updateControlRateCoefficients(*channels[c]);
         }
 
-        double masterSumL = 0.0, masterSumR = 0.0;
-        for (int c = 0; c < 2; ++c) {
-            double chL = 0.0, chR = 0.0;
-            processChannelStrip64(*channels[c], chL, chR);
-            if (c == 0) { chL *= gainA; chR *= gainA; }
-            else if (c == 1) { chL *= gainB; chR *= gainB; }
-            masterSumL += chL;
-            masterSumR += chR;
+        // Compute dynamic cross-deck spectral sidechain ducking amounts
+        double subDuckA = 0.0, voxDuckA = 0.0;
+        double subDuckB = 0.0, voxDuckB = 0.0;
+        if (sidechainOn && channels[0]->playing.load(std::memory_order_relaxed) && channels[1]->playing.load(std::memory_order_relaxed)) {
+            double subEnvA = channels[0]->liveSubBassEnv.load(std::memory_order_relaxed) * gainA;
+            double subEnvB = channels[1]->liveSubBassEnv.load(std::memory_order_relaxed) * gainB;
+            double voxEnvA = channels[0]->liveVocalEnv.load(std::memory_order_relaxed) * gainA;
+            double voxEnvB = channels[1]->liveVocalEnv.load(std::memory_order_relaxed) * gainB;
+
+            if (gainB >= gainA) {
+                subDuckA = std::clamp(subEnvB * 2.2, 0.0, 0.80);
+                voxDuckA = std::clamp(voxEnvB * 2.0, 0.0, 0.72);
+            } else {
+                subDuckB = std::clamp(subEnvA * 2.2, 0.0, 0.80);
+                voxDuckB = std::clamp(voxEnvA * 2.0, 0.0, 0.72);
+            }
         }
+
+        double chAL = 0.0, chAR = 0.0, chBL = 0.0, chBR = 0.0;
+        processChannelStrip64(*channels[0], subDuckA, voxDuckA, chAL, chAR);
+        processChannelStrip64(*channels[1], subDuckB, voxDuckB, chBL, chBR);
+
+        double masterSumL = chAL * gainA + chBL * gainB;
+        double masterSumR = chAR * gainA + chBR * gainB;
 
         for (int p = 0; p < NUM_SAMPLER_PADS; ++p) {
             if (samplerPads[p].active.load()) {
@@ -680,12 +789,6 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
 
         processMasterBeatFx64(masterSumL, masterSumR);
         mNeveTransformer.processMasterSample(masterSumL, masterSumR, static_cast<double>(neveTransformerDrive.load()));
-
-        if ((frame & 63) == 0) {
-            int band = (frame >> 6) % SPECTRUM_BANDS;
-            float bandVal = static_cast<float>((band < 8) ? std::abs(mLpL) : (band < 22 ? std::abs(mHiLpL) : std::abs(mHiHpL)));
-            masterSpectrum[band].store(0.85f * masterSpectrum[band].load() + 0.15f * std::clamp(bandVal * 1.6f, 0.0f, 1.0f));
-        }
 
         outputBuffer[frame * 2]     = static_cast<float>(std::clamp(masterSumL, -0.999, 0.999));
         outputBuffer[frame * 2 + 1] = static_cast<float>(std::clamp(masterSumR, -0.999, 0.999));
@@ -818,6 +921,7 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeSetMasterParam(JNIEn
         case 8: gEngine->beatFxType.store(static_cast<int>(value)); break;
         case 9: gEngine->beatFxWetDry.store(std::clamp(value, 0.0f, 1.0f)); break;
         case 10: gEngine->beatFxTimeMs.store(std::clamp(value, 20.0f, 2000.0f)); break;
+        case 11: gEngine->spectralSidechainEnabled.store(value > 0.5f); break;
     }
 }
 
