@@ -2,7 +2,6 @@
 
 #include <oboe/Oboe.h>
 #include <signalsmith-stretch.h>
-#include <onnxruntime_cxx_api.h>
 #include <vector>
 #include <array>
 #include <atomic>

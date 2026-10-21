@@ -6,17 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(oboe REQUIRED CONFIG)
 
-set(ORT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime)
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-stretch
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-    ${ORT_DIR}/headers
-)
-
-add_library(onnxruntime SHARED IMPORTED)
-set_target_properties(onnxruntime PROPERTIES
-    IMPORTED_LOCATION ${ORT_DIR}/jni/${ANDROID_ABI}/libonnxruntime.so
 )
 
 add_library(apexdj_engine SHARED
@@ -25,7 +18,6 @@ add_library(apexdj_engine SHARED
 
 target_link_libraries(apexdj_engine
     oboe::oboe
-    onnxruntime
     android
     mediandk
     log

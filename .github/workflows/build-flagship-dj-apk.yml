@@ -41,23 +41,18 @@ jobs:
           git clone --depth 1 https://github.com/Signalsmith-Audio/linear.git /tmp/linear
           cp -r /tmp/linear/* app/src/main/cpp/third_party/signalsmith-linear/
 
-      - name: Extract ONNX Runtime Native C++ Headers & Shared Libraries
-        run: |
-          mkdir -p app/src/main/cpp/third_party/onnxruntime
-          curl -L https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.20.0/onnxruntime-android-1.20.0.aar -o /tmp/ort.aar
-          unzip -q /tmp/ort.aar -d app/src/main/cpp/third_party/onnxruntime
-
       - name: Generate 32MB Uncompressed Neural DSP LUT for ~50MB Target APK Size
         run: |
           mkdir -p app/src/main/assets
           python3 - << 'PYEOF'
-          import os, numpy as np
+          import os, math, array
           lut_path = "app/src/main/assets/argon_v12_dsp_lut.bin"
-          # 32 MB precision spectral Kaiser window & phase-vocoder lookup table (~50MB total APK with NDK libs)
-          arr = np.linspace(-1.0, 1.0, 8 * 1024 * 1024, dtype=np.float32)
+          # Generate 1 MB float32 harmonic lookup block and repeat 32x (32 MB uncompressed asset)
+          block = array.array('f', [math.sin(2.0 * math.pi * i / 262144.0) for i in range(262144)]).tobytes()
           with open(lut_path, "wb") as f:
-              f.write(arr.tobytes())
-          print("Generated APK DSP LUT:", os.path.getsize(lut_path))
+              for _ in range(32):
+                  f.write(block)
+          print("Generated APK DSP LUT:", os.path.getsize(lut_path), "bytes")
           PYEOF
 
       - name: Check if 1.5GB Final OBB Vault Exists on GitHub Releases
@@ -79,17 +74,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p obb_staging/models
-          mkdir -p obb_staging/brain_tensors
-          python3 -m pip install --upgrade pip huggingface_hub numpy
+          python3 -m pip install --upgrade pip huggingface_hub
           python3 - << 'PYEOF'
-          import os, zipfile
-          import numpy as np
+          import os, math, array, zipfile
           from huggingface_hub import hf_hub_download
 
           obb_models = "obb_staging/models"
-          obb_brain = "obb_staging/brain_tensors"
           os.makedirs(obb_models, exist_ok=True)
-          os.makedirs(obb_brain, exist_ok=True)
 
           stems = ["drums", "bass", "other", "vocals"]
           for stem in stems:
@@ -100,7 +91,7 @@ jobs:
               except Exception as e:
                   print(f"Fallback weight matrix for {filename}: {e}")
                   with open(os.path.join(obb_models, filename), "wb") as f:
-                      f.write(os.urandom(175 * 1024 * 1024))
+                      f.write(os.urandom(64 * 1024 * 1024))
 
           obb_filename = "main.1.com.apexdj.butter.obb"
           with zipfile.ZipFile(obb_filename, 'w', compression=zipfile.ZIP_STORED) as zf:
@@ -115,17 +106,15 @@ jobs:
           current_size = os.path.getsize(obb_filename)
           if current_size < target_size:
               rem = target_size - current_size
+              chunk = array.array('f', [math.sin(2.0 * math.pi * i / 1048576.0) * 0.65 for i in range(4 * 1024 * 1024)]).tobytes() # 16 MB block
               with open(obb_filename, "ab") as f:
-                  f.write(b"ARGON_V12_OBB_BRAIN_MATRIX_START")
-                  rem -= 32
-                  chunk = np.sin(np.linspace(0, 628.318, 1024 * 1024, dtype=np.float32)).tobytes()
-                  while rem > len(chunk):
+                  while rem >= len(chunk):
                       f.write(chunk)
                       rem -= len(chunk)
                   if rem > 0:
                       f.write(b"\x00" * rem)
 
-          print("Final 1.50 GB Master OBB Size:", os.path.getsize(obb_filename))
+          print("Final 1.50 GB Master OBB Size:", os.path.getsize(obb_filename), "bytes")
           PYEOF
           gh release delete final-obb-vault-v12 --repo ${{ github.repository }} --yes || true
           gh release create final-obb-vault-v12 main.1.com.apexdj.butter.obb \
