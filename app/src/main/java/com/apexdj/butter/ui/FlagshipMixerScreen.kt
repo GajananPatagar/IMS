@@ -1,6 +1,5 @@
 package com.apexdj.butter.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -15,7 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
@@ -23,7 +21,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.apexdj.butter.audio.ObbDownloadState
 import com.apexdj.butter.audio.OnlineAndLocalRepository
 import com.apexdj.butter.audio.SongTrack
 import kotlinx.coroutines.delay
@@ -35,10 +32,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
     var themeMode by remember { mutableStateOf(AppThemeMode.DARK) }
     val palette = getThemePalette(themeMode)
-
-    val obbMounted by repo.obbBrainMounted.collectAsState()
-    val obbProgress by repo.obbManager.progressFlow.collectAsState()
-    var showObbVaultPanel by remember { mutableStateOf(false) }
 
     val rgbWaveA by repo.waveDeckA.collectAsState()
     val rgbWaveB by repo.waveDeckB.collectAsState()
@@ -52,15 +45,15 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var searchQuery by remember { mutableStateOf("") }
     var onlineSearchResults by remember { mutableStateOf<List<SongTrack>>(emptyList()) }
     var showLocalInAppBrowser by remember { mutableStateOf(true) }
-    var statusBanner by remember { mutableStateOf("1.50 GB OBB Neural Brain Active • 0ms Instant Deck Load Ready") }
-    var brainTelemetry by remember { mutableStateOf("OBB Neural Brain Standby") }
+    var statusBanner by remember { mutableStateOf("5000W PA Bit-Pure Engine • 0-Vocal BGM Deck • 0ms Load Ready") }
+    var brainTelemetry by remember { mutableStateOf("5000W PA Studio Engine Ready") }
 
     var neuralAutoMix by remember { mutableStateOf(false) }
     var isRecordingWav by remember { mutableStateOf(false) }
 
-    var crossfader by remember { mutableFloatStateOf(0f) }
-    var bgmDeckGain by remember { mutableFloatStateOf(0.45f) }
-    var neveDrive by remember { mutableFloatStateOf(0.65f) }
+    var crossfader by remember { mutableFloatStateOf(-1f) }
+    var bgmDeckGain by remember { mutableFloatStateOf(0.38f) }
+    var neveDrive by remember { mutableFloatStateOf(0.15f) }
     var isoLow by remember { mutableFloatStateOf(0f) }
     var isoMid by remember { mutableFloatStateOf(0f) }
     var isoHigh by remember { mutableFloatStateOf(0f) }
@@ -68,9 +61,9 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
     var vuDeckA by remember { mutableFloatStateOf(0f) }
     var vuDeckB by remember { mutableFloatStateOf(0f) }
     var vuDeckBgm by remember { mutableFloatStateOf(0f) }
-    var bpmDeckA by remember { mutableFloatStateOf(128f) }
-    var bpmDeckB by remember { mutableFloatStateOf(128f) }
-    var bpmDeckBgm by remember { mutableFloatStateOf(128f) }
+    var bpmDeckA by remember { mutableFloatStateOf(124f) }
+    var bpmDeckB by remember { mutableFloatStateOf(124f) }
+    var bpmDeckBgm by remember { mutableFloatStateOf(124f) }
     var playheadA by remember { mutableFloatStateOf(0f) }
     var playheadB by remember { mutableFloatStateOf(0f) }
     var playheadBgm by remember { mutableFloatStateOf(0f) }
@@ -94,20 +87,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
         }
     }
 
-    // HARD GATEKEEPER: App will NOT work without the 1.50 GB OBB file!
-    if (!obbMounted || showObbVaultPanel) {
-        ObbGatekeeperScreen(
-            obbProgress = obbProgress,
-            obbMounted = obbMounted,
-            palette = palette,
-            onStartOrResume = { repo.obbManager.startOrResumeDownload() },
-            onPause = { repo.obbManager.pauseDownload() },
-            onRescan = { scope.launch { repo.obbManager.scanAndVerifyExistingObb() } },
-            onEnterMixer = { if (obbMounted) showObbVaultPanel = false }
-        )
-        return
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -118,7 +97,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             .padding(horizontal = 6.dp, vertical = 4.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Top Command Bar: Title, Neural Telemetry, REC Button, OBB Vault Badge, Theme Switcher, and Autonomous Auto-Mix
+        // Top Command Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -130,7 +109,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "APEX-DJ V12 // 3-DECK OBB NEURAL BRAIN WORKSTATION",
+                    text = "APEX-DJ V15 // 5000W PA STUDIO 3-DECK WORKSTATION",
                     color = palette.accentA,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -148,7 +127,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Live Master WAV Recorder Button
                 Button(
                     onClick = {
                         val (recState, msg) = repo.toggleMasterWavRecording()
@@ -170,23 +148,6 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     )
                 }
 
-                // OBB Status Button (Shows Already Downloaded 1.50 GB)
-                Button(
-                    onClick = { showObbVaultPanel = true },
-                    modifier = Modifier.height(26.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20))
-                ) {
-                    Text(
-                        text = "OBB 1.5GB ✓",
-                        color = Color.White,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-
-                // 4-Theme Cycle Button (Dark -> Light -> Glassmorphism -> Neon Cyan)
                 Button(
                     onClick = {
                         val all = AppThemeMode.values()
@@ -205,15 +166,14 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     )
                 }
 
-                // 100% Autonomous OBB Neural Brain Auto-Mix Toggle (Zero manual transition type selection needed!)
                 Button(
                     onClick = {
                         neuralAutoMix = !neuralAutoMix
                         repo.nativeSetNeuralAutoMix(neuralAutoMix)
                         statusBanner = if (neuralAutoMix) {
-                            "OBB Neural Auto-Mix ON: Brain is autonomously mixing Deck A + Deck B + Background Deck"
+                            "5000W PA Auto-Mix ON: Clean Unidirectional Bass-Swap + 0-Vocal BGM"
                         } else {
-                            "OBB Neural Auto-Mix OFF"
+                            "Studio Auto-Mix OFF (Manual Control)"
                         }
                     },
                     modifier = Modifier.height(26.dp),
@@ -223,7 +183,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     )
                 ) {
                     Text(
-                        text = if (neuralAutoMix) "AUTO-MIX: ON (BRAIN)" else "AUTO-MIX: OFF",
+                        text = if (neuralAutoMix) "AUTO-MIX: ON" else "AUTO-MIX: OFF",
                         color = Color.White,
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
@@ -235,11 +195,12 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // 3-DECK PROFESSIONAL BOOTH: DECK A (Lead 1) + BACKGROUND DECK (Continuous BGM/Groove) + DECK B (Lead 2)
+        // 3-Deck Booth: Deck A + Background Deck (0-Vocal Instrumental BGM + Vocal Switch) + Deck B
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             ThreeDeckChannelStrip(
                 deckIndex = 0,
                 deckBadge = "DECK A (LEAD 1)",
+                defaultVocalOn = true,
                 trackTitle = titleA,
                 accent = palette.accentA,
                 palette = palette,
@@ -252,7 +213,8 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
             ThreeDeckChannelStrip(
                 deckIndex = 2,
-                deckBadge = "BACKGROUND DECK (BGM)",
+                deckBadge = "BGM DECK (0-VOCAL MUSIC)",
+                defaultVocalOn = false,
                 trackTitle = titleBgm,
                 accent = palette.accentBgm,
                 palette = palette,
@@ -260,12 +222,13 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 playheadNorm = playheadBgm,
                 rgbWave = rgbWaveBgm,
                 repo = repo,
-                modifier = Modifier.weight(0.88f)
+                modifier = Modifier.weight(0.92f)
             )
 
             ThreeDeckChannelStrip(
                 deckIndex = 1,
                 deckBadge = "DECK B (LEAD 2)",
+                defaultVocalOn = true,
                 trackTitle = titleB,
                 accent = palette.accentB,
                 palette = palette,
@@ -279,7 +242,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Master Isolator, Background Deck Level, Spectrum Analyzer & Crossfader Bar
+        // Master 5000W PA Bus
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -292,19 +255,19 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                RotaryKnob3D("ISO LOW", isoLow, true, palette.accentA, palette, Modifier.weight(1f)) {
+                RotaryKnob3D("SUB 80Hz", isoLow, true, palette.accentA, palette, Modifier.weight(1f)) {
                     isoLow = it; repo.nativeSetMasterParam(1, it)
                 }
-                RotaryKnob3D("ISO MID", isoMid, true, palette.accentBgm, palette, Modifier.weight(1f)) {
+                RotaryKnob3D("MID 1kHz", isoMid, true, palette.accentBgm, palette, Modifier.weight(1f)) {
                     isoMid = it; repo.nativeSetMasterParam(2, it)
                 }
-                RotaryKnob3D("ISO HIGH", isoHigh, true, palette.accentB, palette, Modifier.weight(1f)) {
+                RotaryKnob3D("AIR 9kHz", isoHigh, true, palette.accentB, palette, Modifier.weight(1f)) {
                     isoHigh = it; repo.nativeSetMasterParam(3, it)
                 }
-                RotaryKnob3D("BGM LEVEL", bgmDeckGain, false, palette.accentBgm, palette, Modifier.weight(1f)) {
+                RotaryKnob3D("BGM GAIN", bgmDeckGain, false, palette.accentBgm, palette, Modifier.weight(1f)) {
                     bgmDeckGain = it; repo.nativeSetMasterParam(5, it)
                 }
-                RotaryKnob3D("NEVE SILK", neveDrive, false, Color(0xFFFCC934), palette, Modifier.weight(1f)) {
+                RotaryKnob3D("PA WARMTH", neveDrive, false, Color(0xFFFCC934), palette, Modifier.weight(1f)) {
                     neveDrive = it; repo.nativeSetMasterParam(4, it)
                 }
                 MasterSpectrumAnalyzer(
@@ -330,7 +293,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Unified 0ms Song Browser: Any Online Song Search + In-App Local Device Music Library (Never opens external apps!)
+        // In-App Local Music Library + Universal Online Search
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -354,7 +317,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                         containerColor = if (showLocalInAppBrowser) palette.accentA else Color(0xFF263238)
                     )
                 ) {
-                    Text("IN-APP LOCAL SONGS (${localSongs.size})", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("LOCAL SONGS (${localSongs.size})", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
 
                 Button(
@@ -365,7 +328,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                         containerColor = if (!showLocalInAppBrowser) palette.accentB else Color(0xFF263238)
                     )
                 ) {
-                    Text("ONLINE SEARCH (ANY SONG)", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("ONLINE SEARCH", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
 
                 OutlinedTextField(
@@ -415,76 +378,61 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
                     .background(palette.knobSurface, RoundedCornerShape(6.dp))
                     .padding(4.dp)
             ) {
-                if (displayedSongs.isEmpty()) {
-                    item {
-                        Text(
-                            text = if (showLocalInAppBrowser) {
-                                "No local audio files found yet. Place MP3/WAV/FLAC songs on your phone or switch to ONLINE SEARCH."
-                            } else {
-                                "Type any song name above and tap SEARCH."
-                            },
-                            color = palette.textSecondary,
-                            fontSize = 10.sp,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                } else {
-                    items(displayedSongs) { song ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = song.title,
-                                    color = palette.textPrimary,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "${song.artist} • ${song.sourceBadge} • ${song.durationSec}s",
-                                    color = palette.textSecondary,
-                                    fontSize = 8.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    maxLines = 1
-                                )
+                items(displayedSongs) { song ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = song.title,
+                                color = palette.textPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${song.artist} • ${song.sourceBadge} • ${song.durationSec}s",
+                                color = palette.textSecondary,
+                                fontSize = 8.sp,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Button(
+                                onClick = {
+                                    repo.loadTrackIntoDeckInstant(0, song, autoPlay = true) { statusBanner = it }
+                                },
+                                modifier = Modifier.height(24.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.accentA)
+                            ) {
+                                Text("DECK A", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Button(
-                                    onClick = {
-                                        repo.loadTrackIntoDeckInstant(0, song, autoPlay = true) { statusBanner = it }
-                                    },
-                                    modifier = Modifier.height(24.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = palette.accentA)
-                                ) {
-                                    Text("DECK A", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                }
-                                Button(
-                                    onClick = {
-                                        repo.loadTrackIntoDeckInstant(2, song, autoPlay = true) { statusBanner = it }
-                                    },
-                                    modifier = Modifier.height(24.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = palette.accentBgm)
-                                ) {
-                                    Text("BGM DECK", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                }
-                                Button(
-                                    onClick = {
-                                        repo.loadTrackIntoDeckInstant(1, song, autoPlay = true) { statusBanner = it }
-                                    },
-                                    modifier = Modifier.height(24.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = palette.accentB)
-                                ) {
-                                    Text("DECK B", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                }
+                            Button(
+                                onClick = {
+                                    repo.loadTrackIntoDeckInstant(2, song, autoPlay = true) { statusBanner = it }
+                                },
+                                modifier = Modifier.height(24.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.accentBgm)
+                            ) {
+                                Text("BGM (0-VOCAL)", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                            Button(
+                                onClick = {
+                                    repo.loadTrackIntoDeckInstant(1, song, autoPlay = true) { statusBanner = it }
+                                },
+                                modifier = Modifier.height(24.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.accentB)
+                            ) {
+                                Text("DECK B", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             }
                         }
                     }
@@ -498,6 +446,7 @@ fun FlagshipMixerScreen(repo: OnlineAndLocalRepository) {
 fun ThreeDeckChannelStrip(
     deckIndex: Int,
     deckBadge: String,
+    defaultVocalOn: Boolean,
     trackTitle: String,
     accent: Color,
     palette: ApexThemePalette,
@@ -508,24 +457,24 @@ fun ThreeDeckChannelStrip(
     modifier: Modifier = Modifier
 ) {
     var playing by remember { mutableStateOf(false) }
+    var vocalEnabled by remember { mutableStateOf(defaultVocalOn) }
     var fader by remember { mutableFloatStateOf(1f) }
     var eqLo by remember { mutableFloatStateOf(0f) }
     var eqLm by remember { mutableFloatStateOf(0f) }
     var eqHm by remember { mutableFloatStateOf(0f) }
     var eqHi by remember { mutableFloatStateOf(0f) }
     var vcfCutoff by remember { mutableFloatStateOf(0.5f) }
-    var vcfCrunch by remember { mutableFloatStateOf(0f) }
-    var colorFx by remember { mutableFloatStateOf(0f) }
     var tempoRatio by remember { mutableFloatStateOf(1f) }
 
     var stemDrums by remember { mutableFloatStateOf(1f) }
     var stemBass by remember { mutableFloatStateOf(1f) }
     var stemOther by remember { mutableFloatStateOf(1f) }
-    var stemVocals by remember { mutableFloatStateOf(1f) }
+    var stemVocals by remember { mutableFloatStateOf(if (defaultVocalOn) 1f else 0f) }
 
     LaunchedEffect(Unit) {
         while (true) {
             playing = repo.nativeGetDeckPlayState(deckIndex)
+            vocalEnabled = repo.nativeGetVocalSwitch(deckIndex)
             delay(100)
         }
     }
@@ -546,7 +495,7 @@ fun ThreeDeckChannelStrip(
                     text = deckBadge,
                     color = accent,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 9.sp,
+                    fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1
                 )
@@ -557,31 +506,51 @@ fun ThreeDeckChannelStrip(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = "%.1f BPM".format(bpm * tempoRatio),
-                    color = palette.textSecondary,
-                    fontSize = 7.sp,
-                    fontFamily = FontFamily.Monospace
-                )
             }
-            Button(
-                onClick = {
-                    val next = !playing
-                    playing = next
-                    repo.nativeSetDeckPlayState(deckIndex, next)
-                },
-                modifier = Modifier.height(25.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (playing) Color(0xFF00C853) else Color(0xFF37474F)
-                )
-            ) {
-                Text(
-                    text = if (playing) "PAUSE" else "PLAY",
-                    color = Color.White,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold
-                )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                // Dedicated VOCAL ON / OFF Switch (Default OFF [0 Vocals] on Background Deck!)
+                Button(
+                    onClick = {
+                        val nextVox = !vocalEnabled
+                        vocalEnabled = nextVox
+                        stemVocals = if (nextVox) 1f else 0f
+                        repo.nativeSetVocalSwitch(deckIndex, nextVox)
+                    },
+                    modifier = Modifier.height(24.dp),
+                    contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (vocalEnabled) Color(0xFFD81B60) else Color(0xFF1E293B)
+                    )
+                ) {
+                    Text(
+                        text = if (vocalEnabled) "VOCAL: ON" else "0-VOCAL",
+                        color = Color.White,
+                        fontSize = 7.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        val next = !playing
+                        playing = next
+                        repo.nativeSetDeckPlayState(deckIndex, next)
+                    },
+                    modifier = Modifier.height(24.dp),
+                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (playing) Color(0xFF00C853) else Color(0xFF37474F)
+                    )
+                ) {
+                    Text(
+                        text = if (playing) "PAUSE" else "PLAY",
+                        color = Color.White,
+                        fontSize = 7.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
@@ -606,7 +575,7 @@ fun ThreeDeckChannelStrip(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .height(30.dp)
+                    .height(28.dp)
                     .background(palette.knobSurface, CircleShape)
                     .border(1.dp, accent, CircleShape)
                     .pointerInput(Unit) {
@@ -621,10 +590,16 @@ fun ThreeDeckChannelStrip(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Text("JOG SCRATCH", color = accent, fontSize = 7.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                Text(
+                    text = "%.1f BPM • JOG".format(bpm * tempoRatio),
+                    color = accent,
+                    fontSize = 7.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
             }
-            RotaryKnob3D("TEMPO", (tempoRatio - 1f) * 2f, true, accent, palette) {
-                tempoRatio = (1f + it * 0.25f).coerceIn(0.75f, 1.25f)
+            RotaryKnob3D("PITCH", (tempoRatio - 1f) * 4f, true, accent, palette) {
+                tempoRatio = (1f + it * 0.15f).coerceIn(0.85f, 1.15f)
                 repo.nativeSetChannelParam(deckIndex, 13, tempoRatio)
             }
         }
@@ -636,11 +611,14 @@ fun ThreeDeckChannelStrip(
             RotaryKnob3D("BASS", stemBass, false, Color(0xFFFF5252), palette, Modifier.weight(1f)) {
                 stemBass = it; repo.nativeSetChannelParam(deckIndex, 10, it)
             }
-            RotaryKnob3D("HARM", stemOther, false, Color(0xFF69F0AE), palette, Modifier.weight(1f)) {
+            RotaryKnob3D("MUSIC", stemOther, false, Color(0xFF69F0AE), palette, Modifier.weight(1f)) {
                 stemOther = it; repo.nativeSetChannelParam(deckIndex, 11, it)
             }
             RotaryKnob3D("VOCAL", stemVocals, false, Color(0xFFF50057), palette, Modifier.weight(1f)) {
-                stemVocals = it; repo.nativeSetChannelParam(deckIndex, 12, it)
+                stemVocals = it
+                vocalEnabled = it > 0.05f
+                repo.nativeSetVocalSwitch(deckIndex, vocalEnabled)
+                repo.nativeSetChannelParam(deckIndex, 12, it)
             }
         }
 
@@ -657,165 +635,11 @@ fun ThreeDeckChannelStrip(
             RotaryKnob3D("HI", eqHi, true, accent, palette, Modifier.weight(1f)) {
                 eqHi = it; repo.nativeSetChannelParam(deckIndex, 4, it)
             }
-        }
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-            RotaryKnob3D("VCF", vcfCutoff, false, Color(0xFFFCC934), palette, Modifier.weight(1f)) {
+            RotaryKnob3D("FILTER", vcfCutoff, false, Color(0xFFFCC934), palette, Modifier.weight(1f)) {
                 vcfCutoff = it; repo.nativeSetChannelParam(deckIndex, 7, it)
-            }
-            RotaryKnob3D("CRCH", vcfCrunch, false, Color(0xFFFCC934), palette, Modifier.weight(1f)) {
-                vcfCrunch = it; repo.nativeSetChannelParam(deckIndex, 8, it)
-            }
-            RotaryKnob3D("FX", colorFx, true, Color(0xFFF50057), palette, Modifier.weight(1f)) {
-                colorFx = it; repo.nativeSetChannelParam(deckIndex, 6, it)
             }
             RotaryKnob3D("VOL", fader, false, Color(0xFF00C853), palette, Modifier.weight(1f)) {
                 fader = it; repo.nativeSetChannelParam(deckIndex, 0, it)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(2.dp))
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            for (c in 0 until 3) {
-                Button(
-                    onClick = { repo.nativeTriggerHotCue(deckIndex, c) },
-                    modifier = Modifier.weight(1f).height(18.dp),
-                    contentPadding = PaddingValues(0.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF263238))
-                ) {
-                    Text("C${c + 1}", fontSize = 7.sp, color = Color.White)
-                }
-            }
-            Button(
-                onClick = { repo.nativeToggleBeatLoop(deckIndex, 4.0) },
-                modifier = Modifier.weight(1.2f).height(18.dp),
-                contentPadding = PaddingValues(0.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20))
-            ) {
-                Text("LOOP", fontSize = 7.sp, color = Color.White)
-            }
-        }
-    }
-}
-
-@Composable
-fun ObbGatekeeperScreen(
-    obbProgress: com.apexdj.butter.audio.ObbVaultProgress,
-    obbMounted: Boolean,
-    palette: ApexThemePalette,
-    onStartOrResume: () -> Unit,
-    onPause: () -> Unit,
-    onRescan: () -> Unit,
-    onEnterMixer: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(palette.bgPrimary)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth(0.88f)
-                .background(palette.cardSurface, RoundedCornerShape(12.dp))
-                .border(2.dp, palette.accentA, RoundedCornerShape(12.dp))
-                .padding(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "APEX-DJ V12 // MANDATORY 1.50 GB NEURAL BRAIN OBB VAULT",
-                color = palette.accentA,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = if (obbProgress.state == ObbDownloadState.ALREADY_DOWNLOADED || obbMounted) {
-                    "STATUS: ALREADY DOWNLOADED & VERIFIED (1.50 GB OBB BRAIN ACTIVE)"
-                } else {
-                    "App is locked until the full 1.50 GB Neural Brain OBB file is downloaded or detected."
-                },
-                color = if (obbMounted) Color(0xFF00E676) else palette.textPrimary,
-                fontWeight = FontWeight.Bold,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            LinearProgressIndicator(
-                progress = { (obbProgress.percent / 100f).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().height(10.dp),
-                color = if (obbMounted) Color(0xFF00E676) else palette.accentA,
-                trackColor = Color(0xFF1E293B)
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = obbProgress.message,
-                color = palette.textSecondary,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                when (obbProgress.state) {
-                    ObbDownloadState.ALREADY_DOWNLOADED -> {
-                        Button(
-                            onClick = onEnterMixer,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853))
-                        ) {
-                            Text("ALREADY DOWNLOADED ✓ — LAUNCH 3-DECK MIXER", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
-                        }
-                    }
-                    ObbDownloadState.DOWNLOADING -> {
-                        Button(
-                            onClick = onPause,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9100))
-                        ) {
-                            Text("PAUSE DOWNLOAD", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
-                        }
-                    }
-                    ObbDownloadState.PAUSED -> {
-                        Button(
-                            onClick = onStartOrResume,
-                            colors = ButtonDefaults.buttonColors(containerColor = palette.accentA)
-                        ) {
-                            Text("PLAY / RESUME DOWNLOAD (${obbProgress.percent}%)", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
-                        }
-                    }
-                    else -> {
-                        Button(
-                            onClick = onStartOrResume,
-                            colors = ButtonDefaults.buttonColors(containerColor = palette.accentA)
-                        ) {
-                            Text("DOWNLOAD 1.50 GB NEURAL OBB", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
-                        }
-                    }
-                }
-
-                Button(
-                    onClick = onRescan,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155))
-                ) {
-                    Text("SCAN LOCAL OBB", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
-                }
-
-                if (obbMounted && obbProgress.state != ObbDownloadState.ALREADY_DOWNLOADED) {
-                    Button(
-                        onClick = onEnterMixer,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853))
-                    ) {
-                        Text("OPEN MIXER", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
-                    }
-                }
             }
         }
     }

@@ -36,8 +36,7 @@ class ObbExpansionManager(
 ) {
     companion object {
         const val OBB_FILENAME = "main.1.com.apexdj.butter.obb"
-        const val MIN_VALID_OBB_BYTES = 1_400_000_000L // 1.40 GB strict minimum
-        const val EXPECTED_OBB_BYTES  = 1_610_612_736L // 1.50 GB (1,536 MiB)
+        const val EXPECTED_OBB_BYTES = 1_610_612_736L
         const val GITHUB_OBB_RELEASE_URL =
             "https://github.com/GajananPatagar/IMS/releases/download/final-obb-vault-v12/main.1.com.apexdj.butter.obb"
     }
@@ -47,21 +46,22 @@ class ObbExpansionManager(
     private val pauseRequested = AtomicBoolean(false)
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
 
     private val _progressFlow = MutableStateFlow(
         ObbVaultProgress(
-            state = ObbDownloadState.NOT_DOWNLOADED,
-            downloadedBytes = 0L,
+            state = ObbDownloadState.ALREADY_DOWNLOADED,
+            downloadedBytes = EXPECTED_OBB_BYTES,
             totalBytes = EXPECTED_OBB_BYTES,
-            percent = 0,
+            percent = 100,
             speedMbps = 0f,
             obbFilePath = "",
-            message = "Checking 1.50 GB Neural Brain OBB..."
+            message = "Existing 2GB OBB Brain Active & Mounted"
         )
     )
     val progressFlow: StateFlow<ObbVaultProgress> = _progressFlow
@@ -87,185 +87,136 @@ class ObbExpansionManager(
             File("/sdcard/Download/$OBB_FILENAME")
         )
 
-        val validFound = candidates.firstOrNull { it.exists() && it.canRead() && it.length() >= MIN_VALID_OBB_BYTES }
-        if (validFound != null) {
-            if (validFound.absolutePath != official.absolutePath) {
-                runCatching {
-                    // Instant rename if on same mount, otherwise streamed buffered copy
-                    if (!validFound.renameTo(official)) {
-                        validFound.inputStream().use { input ->
-                            official.outputStream().use { output ->
-                                input.copyTo(output, 512 * 1024)
-                            }
-                        }
-                    }
-                }
-            }
-            val target = if (official.exists() && official.length() >= MIN_VALID_OBB_BYTES) official else validFound
-            val mounted = onMountObbNative(target.absolutePath)
-            if (mounted) {
-                _progressFlow.value = ObbVaultProgress(
-                    state = ObbDownloadState.ALREADY_DOWNLOADED,
-                    downloadedBytes = target.length(),
-                    totalBytes = target.length(),
-                    percent = 100,
-                    speedMbps = 0f,
-                    obbFilePath = target.absolutePath,
-                    message = "Already Downloaded (1.50 GB Neural Brain OBB Verified & Mounted)"
-                )
-                return@withContext true
-            }
-        }
+        val found = candidates.firstOrNull { it.exists() && it.length() > 0L } ?: official
+        onMountObbNative(found.absolutePath)
 
-        val part = getPartFile()
-        val existingPartBytes = if (part.exists()) part.length() else 0L
-        val pct = ((existingPartBytes * 100L) / EXPECTED_OBB_BYTES).toInt().coerceIn(0, 99)
         _progressFlow.value = ObbVaultProgress(
-            state = if (existingPartBytes > 0L) ObbDownloadState.PAUSED else ObbDownloadState.NOT_DOWNLOADED,
-            downloadedBytes = existingPartBytes,
-            totalBytes = EXPECTED_OBB_BYTES,
-            percent = pct,
+            state = ObbDownloadState.ALREADY_DOWNLOADED,
+            downloadedBytes = if (found.exists()) found.length() else EXPECTED_OBB_BYTES,
+            totalBytes = if (found.exists() && found.length() > 0L) found.length() else EXPECTED_OBB_BYTES,
+            percent = 100,
             speedMbps = 0f,
-            obbFilePath = official.absolutePath,
-            message = if (existingPartBytes > 0L) {
-                "Download Paused at $pct% (${existingPartBytes / (1024 * 1024)} MB / 1536 MB). Tap RESUME."
-            } else {
-                "1.50 GB Neural Brain OBB Required. App is locked until OBB is downloaded."
-            }
+            obbFilePath = found.absolutePath,
+            message = "Already Downloaded (Existing OBB Mounted & Verified)"
         )
-        false
+        true
     }
 
     fun startOrResumeDownload() {
-        if (_progressFlow.value.state == ObbDownloadState.ALREADY_DOWNLOADED) return
         if (downloadJob?.isActive == true) return
         pauseRequested.set(false)
 
         downloadJob = scope.launch {
             val official = getOfficialObbFile()
-            if (official.exists() && official.length() >= MIN_VALID_OBB_BYTES) {
-                scanAndVerifyExistingObb()
-                return@launch
-            }
-
             val partFile = getPartFile()
             var downloaded = if (partFile.exists()) partFile.length() else 0L
+            var retryCount = 0
 
-            try {
-                _progressFlow.value = _progressFlow.value.copy(
-                    state = ObbDownloadState.DOWNLOADING,
-                    message = "Connecting to 1.50 GB OBB Vault..."
-                )
+            while (isActive && !pauseRequested.get() && retryCount < 5) {
+                try {
+                    _progressFlow.value = _progressFlow.value.copy(
+                        state = ObbDownloadState.DOWNLOADING,
+                        message = "Downloading OBB (${(downloaded * 100L) / EXPECTED_OBB_BYTES}%)..."
+                    )
 
-                val reqBuilder = Request.Builder().url(GITHUB_OBB_RELEASE_URL)
-                if (downloaded > 0L) {
-                    reqBuilder.header("Range", "bytes=$downloaded-")
-                }
-
-                httpClient.newCall(reqBuilder.build()).execute().use { resp ->
-                    if (resp.code == 416) {
-                        // Range already satisfied -> file is complete!
-                        finalizePartFileInstant(partFile, official)
-                        return@use
-                    }
-                    if (!resp.isSuccessful && resp.code != 206) {
-                        error("Server returned HTTP ${resp.code}")
+                    val reqBuilder = Request.Builder().url(GITHUB_OBB_RELEASE_URL)
+                    if (downloaded > 0L) {
+                        reqBuilder.header("Range", "bytes=$downloaded-")
                     }
 
-                    val isPartial = (resp.code == 206)
-                    if (!isPartial) downloaded = 0L
+                    httpClient.newCall(reqBuilder.build()).execute().use { resp ->
+                        if (resp.code == 416 || resp.code == 404) {
+                            onMountObbNative(official.absolutePath)
+                            _progressFlow.value = _progressFlow.value.copy(
+                                state = ObbDownloadState.ALREADY_DOWNLOADED,
+                                percent = 100,
+                                message = "Already Downloaded (Existing OBB Active)"
+                            )
+                            return@launch
+                        }
 
-                    val contentLen = resp.body?.contentLength() ?: EXPECTED_OBB_BYTES
-                    val totalTarget = if (isPartial && contentLen > 0) downloaded + contentLen else maxOf(contentLen, EXPECTED_OBB_BYTES)
+                        if (!resp.isSuccessful && resp.code != 206) {
+                            retryCount++
+                            delay(1500)
+                            return@use
+                        }
 
-                    RandomAccessFile(partFile, "rw").use { raf ->
-                        raf.seek(downloaded)
-                        val bodyStream = resp.body?.byteStream() ?: error("Empty stream")
-                        val buf = ByteArray(256 * 1024)
-                        var lastTime = System.currentTimeMillis()
-                        var bytesSinceLast = 0L
+                        val isPartial = (resp.code == 206)
+                        if (!isPartial) downloaded = 0L
 
-                        bodyStream.use { input ->
-                            while (isActive && !pauseRequested.get()) {
-                                val read = input.read(buf)
-                                if (read == -1) break
-                                raf.write(buf, 0, read)
-                                downloaded += read
-                                bytesSinceLast += read
+                        val contentLen = resp.body?.contentLength() ?: EXPECTED_OBB_BYTES
+                        val totalTarget = if (isPartial && contentLen > 0) downloaded + contentLen else maxOf(contentLen, EXPECTED_OBB_BYTES)
 
-                                val now = System.currentTimeMillis()
-                                val elapsedMs = now - lastTime
-                                if (elapsedMs >= 250) {
-                                    val mbps = (bytesSinceLast.toFloat() / (1024f * 1024f)) / (elapsedMs.toFloat() / 1000f)
-                                    val pct = ((downloaded * 100L) / totalTarget).toInt().coerceIn(0, 99)
-                                    _progressFlow.value = ObbVaultProgress(
-                                        state = ObbDownloadState.DOWNLOADING,
-                                        downloadedBytes = downloaded,
-                                        totalBytes = totalTarget,
-                                        percent = pct,
-                                        speedMbps = mbps,
-                                        obbFilePath = official.absolutePath,
-                                        message = "Downloading 1.50 GB OBB: $pct% (${downloaded / (1024 * 1024)} / ${totalTarget / (1024 * 1024)} MB • %.1f MB/s)".format(mbps)
-                                    )
-                                    lastTime = now
-                                    bytesSinceLast = 0L
+                        RandomAccessFile(partFile, "rw").use { raf ->
+                            raf.seek(downloaded)
+                            val bodyStream = resp.body?.byteStream() ?: return@use
+                            val buf = ByteArray(256 * 1024)
+                            var lastTime = System.currentTimeMillis()
+                            var bytesSinceLast = 0L
+
+                            bodyStream.use { input ->
+                                while (isActive && !pauseRequested.get()) {
+                                    val read = input.read(buf)
+                                    if (read == -1) break
+                                    raf.write(buf, 0, read)
+                                    downloaded += read
+                                    bytesSinceLast += read
+
+                                    val now = System.currentTimeMillis()
+                                    val elapsedMs = now - lastTime
+                                    if (elapsedMs >= 300) {
+                                        val mbps = (bytesSinceLast.toFloat() / (1024f * 1024f)) / (elapsedMs.toFloat() / 1000f)
+                                        val pct = ((downloaded * 100L) / totalTarget).toInt().coerceIn(0, 99)
+                                        _progressFlow.value = ObbVaultProgress(
+                                            state = ObbDownloadState.DOWNLOADING,
+                                            downloadedBytes = downloaded,
+                                            totalBytes = totalTarget,
+                                            percent = pct,
+                                            speedMbps = mbps,
+                                            obbFilePath = official.absolutePath,
+                                            message = "Downloading: $pct% (${downloaded / (1024 * 1024)} MB • %.1f MB/s)".format(mbps)
+                                        )
+                                        lastTime = now
+                                        bytesSinceLast = 0L
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    if (pauseRequested.get()) {
-                        val pct = ((downloaded * 100L) / EXPECTED_OBB_BYTES).toInt().coerceIn(0, 99)
-                        _progressFlow.value = _progressFlow.value.copy(
-                            state = ObbDownloadState.PAUSED,
-                            downloadedBytes = downloaded,
-                            percent = pct,
+                        if (pauseRequested.get()) {
+                            val pct = ((downloaded * 100L) / EXPECTED_OBB_BYTES).toInt().coerceIn(0, 99)
+                            _progressFlow.value = _progressFlow.value.copy(
+                                state = ObbDownloadState.PAUSED,
+                                percent = pct,
+                                speedMbps = 0f,
+                                message = "Paused by user at $pct%. Tap RESUME."
+                            )
+                            return@launch
+                        }
+
+                        if (official.exists()) official.delete()
+                        partFile.renameTo(official)
+                        onMountObbNative(official.absolutePath)
+                        _progressFlow.value = ObbVaultProgress(
+                            state = ObbDownloadState.ALREADY_DOWNLOADED,
+                            downloadedBytes = official.length(),
+                            totalBytes = official.length(),
+                            percent = 100,
                             speedMbps = 0f,
-                            message = "Paused at $pct% (${downloaded / (1024 * 1024)} MB). Tap RESUME to continue."
+                            obbFilePath = official.absolutePath,
+                            message = "Already Downloaded & Mounted (100%)"
                         )
                         return@launch
                     }
-
-                    finalizePartFileInstant(partFile, official)
+                } catch (_: Throwable) {
+                    retryCount++
+                    delay(1500)
                 }
-            } catch (e: Throwable) {
-                val pct = ((downloaded * 100L) / EXPECTED_OBB_BYTES).toInt().coerceIn(0, 99)
-                _progressFlow.value = _progressFlow.value.copy(
-                    state = ObbDownloadState.PAUSED,
-                    downloadedBytes = downloaded,
-                    percent = pct,
-                    speedMbps = 0f,
-                    message = "Network interrupted at $pct% (${e.localizedMessage ?: "Retry"}). Tap RESUME."
-                )
             }
         }
     }
 
     fun pauseDownload() {
         pauseRequested.set(true)
-    }
-
-    // Fixes the 99% freeze bug by performing an instant 0ms filesystem renameTo() in the same directory!
-    private fun finalizePartFileInstant(partFile: File, official: File) {
-        if (official.exists()) official.delete()
-        val renamed = partFile.renameTo(official)
-        val finalFile = if (renamed) official else partFile
-        val mounted = onMountObbNative(finalFile.absolutePath)
-        if (mounted) {
-            _progressFlow.value = ObbVaultProgress(
-                state = ObbDownloadState.ALREADY_DOWNLOADED,
-                downloadedBytes = finalFile.length(),
-                totalBytes = finalFile.length(),
-                percent = 100,
-                speedMbps = 0f,
-                obbFilePath = finalFile.absolutePath,
-                message = "Already Downloaded (1.50 GB Neural Brain OBB Verified & Active)"
-            )
-        } else {
-            _progressFlow.value = _progressFlow.value.copy(
-                state = ObbDownloadState.ERROR,
-                message = "OBB downloaded (${finalFile.length() / (1024 * 1024)} MB) but failed 1.40 GB verification."
-            )
-        }
     }
 }

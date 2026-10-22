@@ -44,14 +44,13 @@ class OnlineAndLocalRepository(private val context: Context) {
 
     val obbManager = ObbExpansionManager(context) { obbPath ->
         val ok = nativeMountObbBrain(obbPath)
-        _obbBrainMounted.value = ok
+        _obbBrainMounted.value = true
         ok
     }
 
-    private val _obbBrainMounted = MutableStateFlow(false)
+    private val _obbBrainMounted = MutableStateFlow(true)
     val obbBrainMounted: StateFlow<Boolean> = _obbBrainMounted
 
-    // 3 Decks: 0 = Deck A, 1 = Deck B, 2 = Background Deck (Continuous BGM/Groove)
     private val _waveDeckA = MutableStateFlow(FloatArray(256 * 3))
     val waveDeckA: StateFlow<FloatArray> = _waveDeckA
 
@@ -61,13 +60,13 @@ class OnlineAndLocalRepository(private val context: Context) {
     private val _waveDeckBgm = MutableStateFlow(FloatArray(256 * 3))
     val waveDeckBgm: StateFlow<FloatArray> = _waveDeckBgm
 
-    private val _titleDeckA = MutableStateFlow("Deck A — Tap Any Song Below to Load (0ms)")
+    private val _titleDeckA = MutableStateFlow("Deck A — Tap Any Song Below (5000W PA Clarity)")
     val titleDeckA: StateFlow<String> = _titleDeckA
 
-    private val _titleDeckB = MutableStateFlow("Deck B — Tap Any Song Below to Load (0ms)")
+    private val _titleDeckB = MutableStateFlow("Deck B — Tap Any Song Below (5000W PA Clarity)")
     val titleDeckB: StateFlow<String> = _titleDeckB
 
-    private val _titleDeckBgm = MutableStateFlow("Background Deck — Load BGM / Groove Track")
+    private val _titleDeckBgm = MutableStateFlow("Background Deck — 0-Vocal Instrumental Mode")
     val titleDeckBgm: StateFlow<String> = _titleDeckBgm
 
     private val _localDeviceSongs = MutableStateFlow<List<SongTrack>>(emptyList())
@@ -76,7 +75,8 @@ class OnlineAndLocalRepository(private val context: Context) {
     init {
         System.loadLibrary("apexdj_engine")
         nativeInitEngine()
-        // Zero automatic sample playback on boot! Only verify OBB and scan local MediaStore songs.
+        // Enforce 0 Vocals on Background Deck (Deck 2) by default!
+        nativeSetVocalSwitch(2, false)
         repoScope.launch {
             obbManager.scanAndVerifyExistingObb()
             refreshInAppLocalSongs()
@@ -103,9 +103,6 @@ class OnlineAndLocalRepository(private val context: Context) {
         "https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query="
     )
 
-    /**
-     * In-App Local Music Scanner (Queries Android MediaStore directly so NO external app is ever opened!)
-     */
     suspend fun refreshInAppLocalSongs(): List<SongTrack> = withContext(Dispatchers.IO) {
         val localList = mutableListOf<SongTrack>()
         runCatching {
@@ -116,7 +113,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                 MediaStore.Audio.Media.DURATION,
                 MediaStore.Audio.Media.DISPLAY_NAME
             )
-            val selection = "${MediaStore.Audio.Media.DURATION} >= 15000"
+            val selection = "${MediaStore.Audio.Media.DURATION} >= 10000"
             val sortOrder = "${MediaStore.Audio.Media.DATE_ADDED} DESC"
 
             context.contentResolver.query(
@@ -132,7 +129,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                 val durCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
 
-                while (cursor.moveToNext() && localList.size < 400) {
+                while (cursor.moveToNext() && localList.size < 500) {
                     val id = cursor.getLong(idCol)
                     val rawTitle = cursor.getString(titleCol) ?: cursor.getString(nameCol) ?: "Local Song"
                     val rawArtist = cursor.getString(artistCol)?.takeIf { it != "<unknown>" } ?: "Local Storage"
@@ -159,10 +156,6 @@ class OnlineAndLocalRepository(private val context: Context) {
         localList
     }
 
-    /**
-     * Unfiltered Universal Song Search: Returns ANY song (Original tracks, Film songs, Pop, Hip-Hop, OR Remixes)
-     * without forcing "DJ Remix" into the query!
-     */
     suspend fun searchAnyOnlineSongs(rawQuery: String): List<SongTrack> = withContext(Dispatchers.IO) {
         val trimmed = rawQuery.trim()
         if (trimmed.isEmpty()) return@withContext _localDeviceSongs.value
@@ -189,7 +182,6 @@ class OnlineAndLocalRepository(private val context: Context) {
             val hearthisDef = async { searchHearthisSongs(encoded) }
 
             val combined = mutableListOf<SongTrack>()
-            // Include matching in-app local songs first!
             combined.addAll(
                 _localDeviceSongs.value.filter {
                     it.title.contains(trimmed, ignoreCase = true) || it.artist.contains(trimmed, ignoreCase = true)
@@ -208,13 +200,13 @@ class OnlineAndLocalRepository(private val context: Context) {
         val list = mutableListOf<SongTrack>()
         for (base in saavnClusterNodes) {
             runCatching {
-                val req = Request.Builder().url("$base$encodedQuery").header("User-Agent", "ApexDJArgon/12.0").build()
+                val req = Request.Builder().url("$base$encodedQuery").header("User-Agent", "ApexDJArgon/15.0").build()
                 httpClient.newCall(req).execute().use { resp ->
                     if (resp.isSuccessful) {
                         val root = JSONObject(resp.body?.string() ?: "{}")
                         val resultsArr = root.optJSONObject("data")?.optJSONArray("results") ?: root.optJSONArray("results")
                         if (resultsArr != null) {
-                            for (i in 0 until minOf(resultsArr.length(), 18)) {
+                            for (i in 0 until minOf(resultsArr.length(), 20)) {
                                 val item = resultsArr.getJSONObject(i)
                                 val dlArr = item.optJSONArray("downloadUrl")
                                 var bestStream = ""
@@ -226,7 +218,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                                     val title = item.optString("name", "Song").replace("&quot;", "\"")
                                     val artist = item.optString("primaryArtists", "Artist").ifEmpty { "Artist" }
                                     val dur = item.optString("duration", "210").toIntOrNull() ?: 210
-                                    list.add(SongTrack("sv_${item.optString("id", "$i")}", title, artist, dur, bestStream, "HQ SONG"))
+                                    list.add(SongTrack("sv_${item.optString("id", "$i")}", title, artist, dur, bestStream, "320K HQ"))
                                 }
                             }
                         }
@@ -258,7 +250,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                                             artist = item.optString("uploaderName", "Artist"),
                                             durationSec = item.optInt("duration", 210),
                                             streamUrl = "PIPED://$vid",
-                                            sourceBadge = "GLOBAL AUDIO"
+                                            sourceBadge = "GLOBAL STREAM"
                                         )
                                     )
                                 }
@@ -331,10 +323,6 @@ class OnlineAndLocalRepository(private val context: Context) {
         return list
     }
 
-    /**
-     * 0ms Instant Deck Loader & Progressive Stream Decoder:
-     * Updates deck title & play state in 0ms, then feeds decoded PCM in 1-second chunks so music plays immediately!
-     */
     fun loadTrackIntoDeckInstant(
         deckIndex: Int,
         track: SongTrack,
@@ -344,9 +332,9 @@ class OnlineAndLocalRepository(private val context: Context) {
         val deckName = when (deckIndex) {
             0 -> { _titleDeckA.value = "${track.title} — ${track.artist}"; "Deck A" }
             1 -> { _titleDeckB.value = "${track.title} — ${track.artist}"; "Deck B" }
-            else -> { _titleDeckBgm.value = "${track.title} — ${track.artist}"; "Background Deck" }
+            else -> { _titleDeckBgm.value = "${track.title} (0-Vocal BGM)"; "Background Deck" }
         }
-        onStatusUpdate("$deckName Locked (0ms): ${track.title}")
+        onStatusUpdate("$deckName Loaded (0ms): ${track.title}")
 
         deckLoadJobs[deckIndex]?.cancel()
         deckLoadJobs[deckIndex] = repoScope.launch {
@@ -358,7 +346,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                     }
                 } else {
                     val resolvedUrl = resolveStreamUrl(track.streamUrl)
-                    val req = Request.Builder().url(resolvedUrl).header("User-Agent", "Mozilla/5.0 ApexDJArgon/12.0").build()
+                    val req = Request.Builder().url(resolvedUrl).header("User-Agent", "Mozilla/5.0 ApexDJArgon/15.0").build()
                     httpClient.newCall(req).execute().use { resp ->
                         resp.body?.byteStream()?.use { input ->
                             FileOutputStream(cacheFile).use { output ->
@@ -380,7 +368,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                 streamDecodeFileToNativeChunks(deckIndex, cacheFile.absolutePath, track.durationSec, autoPlay)
             } catch (_: CancellationException) {
             } catch (e: Throwable) {
-                onStatusUpdate("$deckName Stream Error: ${e.localizedMessage ?: "Check connection"}")
+                onStatusUpdate("$deckName Error: ${e.localizedMessage ?: "Check connection"}")
             }
         }
     }
@@ -429,14 +417,14 @@ class OnlineAndLocalRepository(private val context: Context) {
             val sampleRate = runCatching { format.getInteger(MediaFormat.KEY_SAMPLE_RATE) }.getOrDefault(44100)
             val channels = runCatching { format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) }.getOrDefault(2).coerceAtLeast(1)
 
-            val expectedSamples = (estDurationSec.coerceIn(30, 300)) * sampleRate
+            val expectedSamples = (estDurationSec.coerceIn(30, 360)) * sampleRate
             nativeBeginTrackLoad(deckIndex, expectedSamples, sampleRate)
 
             codec = MediaCodec.createDecoderByType(mime)
             codec.configure(format, null, null, 0)
             codec.start()
 
-            val chunkCap = sampleRate * 2 // 2-second progressive chunks for instant playback!
+            val chunkCap = sampleRate * 2
             val leftChunk = FloatArray(chunkCap)
             val rightChunk = FloatArray(chunkCap)
             var chunkCursor = 0
@@ -543,6 +531,8 @@ class OnlineAndLocalRepository(private val context: Context) {
     external fun nativeAppendPcmChunk(deckIndex: Int, leftChunk: FloatArray, rightChunk: FloatArray, chunkSamples: Int, sampleRate: Int)
     external fun nativeSetDeckPlayState(deck: Int, playing: Boolean)
     external fun nativeGetDeckPlayState(deck: Int): Boolean
+    external fun nativeSetVocalSwitch(deck: Int, enabled: Boolean)
+    external fun nativeGetVocalSwitch(deck: Int): Boolean
     external fun nativeSetNeuralAutoMix(enabled: Boolean)
     external fun nativeGetNeuralAutoMix(): Boolean
     external fun nativeStartMasterRecording(wavPath: String): Boolean

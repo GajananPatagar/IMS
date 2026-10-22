@@ -1,29 +1,19 @@
-name: Build ApexDJ V12 (50MB APK + 1.5GB Neural Brain OBB)
+name: Build ApexDJ V15 (App-Only Fast Update)
 
 on:
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
-    inputs:
-      force_rebuild_obb:
-        description: 'Force rebuild 1.5GB OBB Vault'
-        required: false
-        default: 'false'
 
 permissions:
   contents: write
 
 jobs:
-  build-v12-neural:
+  build-v15-app-only:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout IMS Repository
         uses: actions/checkout@v4
-
-      - name: Free Runner Disk Space for 1.5GB OBB & NDK
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/system-images /opt/ghc
-          df -h
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -41,7 +31,7 @@ jobs:
           git clone --depth 1 https://github.com/Signalsmith-Audio/linear.git /tmp/linear
           cp -r /tmp/linear/* app/src/main/cpp/third_party/signalsmith-linear/
 
-      - name: Generate 32MB Uncompressed Neural DSP LUT for ~50MB Target APK Size
+      - name: Generate 32MB Uncompressed Neural DSP LUT for ~50MB App APK
         run: |
           mkdir -p app/src/main/assets
           python3 - << 'PYEOF'
@@ -51,88 +41,17 @@ jobs:
           with open(lut_path, "wb") as f:
               for _ in range(32):
                   f.write(block)
-          print("Generated APK DSP LUT:", os.path.getsize(lut_path), "bytes")
           PYEOF
 
-      - name: Check if 1.5GB Final OBB Vault Exists on GitHub Releases
-        id: check_obb
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ "${{ github.event.inputs.force_rebuild_obb }}" = "true" ]; then
-            echo "needs_obb=true" >> $GITHUB_OUTPUT
-          elif gh release view final-obb-vault-v12 --repo ${{ github.repository }} >/dev/null 2>&1; then
-            echo "needs_obb=false" >> $GITHUB_OUTPUT
-          else
-            echo "needs_obb=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build 1.50 GB Master Neural Brain .OBB File (1,610,612,736 Bytes)
-        if: steps.check_obb.outputs.needs_obb == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p obb_staging/models
-          python3 -m pip install --upgrade pip huggingface_hub
-          python3 - << 'PYEOF'
-          import os, math, array, zipfile
-          from huggingface_hub import hf_hub_download
-
-          obb_models = "obb_staging/models"
-          os.makedirs(obb_models, exist_ok=True)
-
-          stems = ["drums", "bass", "other", "vocals"]
-          for stem in stems:
-              repo_id = f"StemSplitio/htdemucs-ft-{stem}-onnx"
-              filename = f"htdemucs_ft_{stem}.onnx"
-              try:
-                  hf_hub_download(repo_id=repo_id, filename=filename, local_dir=obb_models)
-              except Exception as e:
-                  print(f"Fallback weight matrix for {filename}: {e}")
-                  with open(os.path.join(obb_models, filename), "wb") as f:
-                      f.write(os.urandom(64 * 1024 * 1024))
-
-          obb_filename = "main.1.com.apexdj.butter.obb"
-          with zipfile.ZipFile(obb_filename, 'w', compression=zipfile.ZIP_STORED) as zf:
-              for root, _, files in os.walk("obb_staging"):
-                  for file in files:
-                      full_path = os.path.join(root, file)
-                      rel_path = os.path.relpath(full_path, "obb_staging")
-                      zf.write(full_path, rel_path)
-
-          target_size = 1536 * 1024 * 1024
-          current_size = os.path.getsize(obb_filename)
-          if current_size < target_size:
-              rem = target_size - current_size
-              chunk = array.array('f', [math.sin(2.0 * math.pi * i / 1048576.0) * 0.65 for i in range(4 * 1024 * 1024)]).tobytes()
-              with open(obb_filename, "ab") as f:
-                  while rem >= len(chunk):
-                      f.write(chunk)
-                      rem -= len(chunk)
-                  if rem > 0:
-                      f.write(b"\x00" * rem)
-
-          print("Final 1.50 GB Master OBB Size:", os.path.getsize(obb_filename), "bytes")
-          PYEOF
-          gh release delete final-obb-vault-v12 --repo ${{ github.repository }} --yes || true
-          gh release create final-obb-vault-v12 main.1.com.apexdj.butter.obb \
-            --repo ${{ github.repository }} \
-            --title "ApexDJ V12 Master 1.5GB Neural Brain OBB Vault" \
-            --notes "Mandatory 1.50 GB Neural Brain OBB for ApexDJ V12."
-
-      - name: Compile ~50MB Signed Release APK
+      - name: Compile ~50MB Signed Release App APK (Uses Existing 2GB OBB on Device)
         run: |
           gradle wrapper --gradle-version 8.9
           chmod +x ./gradlew
           keytool -genkey -v -keystore /tmp/release.keystore -alias apexdj -keyalg RSA -keysize 2048 -validity 10000 -storepass apexdj123 -keypass apexdj123 -dname "CN=GajananPatagar, OU=ApexDJ, O=ArgonAudio, L=Bengaluru, S=KA, C=IN"
-          export ANDROID_KEYSTORE_FILE="/tmp/release.keystore"
-          export ANDROID_KEYSTORE_PASSWORD="apexdj123"
-          export ANDROID_KEY_ALIAS="apexdj"
-          export ANDROID_KEY_PASSWORD="apexdj123"
           ./gradlew assembleRelease --no-daemon --stacktrace
           ls -lh app/build/outputs/apk/release/
 
-      - name: Upload ~50MB APK Artifact
+      - name: Upload ~50MB App APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ApexDJ-50MB-App-APK
