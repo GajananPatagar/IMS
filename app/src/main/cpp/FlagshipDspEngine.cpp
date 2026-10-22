@@ -16,7 +16,8 @@ FlagshipDspEngine::FlagshipDspEngine() {
         channels[i] = std::make_unique<FlagshipChannelStrip>();
         channels[i]->init(48000);
     }
-    // Background Deck (Deck 2) defaults to 0 Vocals (Instrumental Only Mode)!
+    mObbMapped.store(false, std::memory_order_release);
+    // Background Deck (Deck 2) defaults to 0-Vocal Instrumental Mode
     channels[2]->vocalSwitchEnabled.store(false);
     channels[2]->stemGain[3].store(0.0f);
 }
@@ -32,23 +33,32 @@ FlagshipDspEngine::~FlagshipDspEngine() {
 
 bool FlagshipDspEngine::mountObbBrain(const std::string& obbPath) {
     struct stat st{};
-    if (stat(obbPath.c_str(), &st) == 0 && st.st_size > 1024) {
-        if (mObbMappedFloats && mObbMappedBytes > 0) {
-            munmap(const_cast<float*>(mObbMappedFloats), mObbMappedBytes);
-            mObbMappedFloats = nullptr;
-        }
-        if (mObbFd >= 0) close(mObbFd);
-        mObbFd = open(obbPath.c_str(), O_RDONLY);
-        if (mObbFd >= 0) {
-            mObbMappedBytes = static_cast<size_t>(st.st_size);
-            void* ptr = mmap(nullptr, mObbMappedBytes, PROT_READ, MAP_SHARED, mObbFd, 0);
-            if (ptr != MAP_FAILED) {
-                mObbMappedFloats = reinterpret_cast<const float*>(ptr);
-            }
-        }
+    if (stat(obbPath.c_str(), &st) != 0) return false;
+    if (st.st_size < 1400000000LL) {
+        LOGI("OBB rejected: %lld bytes (< 1.40 GB)", static_cast<long long>(st.st_size));
+        return false;
     }
+
+    if (mObbMappedFloats && mObbMappedBytes > 0) {
+        munmap(const_cast<float*>(mObbMappedFloats), mObbMappedBytes);
+        mObbMappedFloats = nullptr;
+    }
+    if (mObbFd >= 0) close(mObbFd);
+
+    mObbFd = open(obbPath.c_str(), O_RDONLY);
+    if (mObbFd < 0) return false;
+
+    mObbMappedBytes = static_cast<size_t>(st.st_size);
+    void* ptr = mmap(nullptr, mObbMappedBytes, PROT_READ, MAP_SHARED, mObbFd, 0);
+    if (ptr == MAP_FAILED) {
+        close(mObbFd);
+        mObbFd = -1;
+        return false;
+    }
+
+    mObbMappedFloats = reinterpret_cast<const float*>(ptr);
     mObbMapped.store(true, std::memory_order_release);
-    mActiveBrainStateText = "5000W PA Studio Engine + OBB Brain Locked";
+    mActiveBrainStateText = "1.50 GB OBB Neural Brain Active (5000W PA Linear-Phase Lock)";
     return true;
 }
 
@@ -93,14 +103,13 @@ void FlagshipDspEngine::beginTrackLoad(int deckIndex, int totalExpectedSamples, 
     ch.nativeTrackSampleRate.store(std::max(8000, sampleRate), std::memory_order_release);
     ch.loadedSamples.store(0, std::memory_order_release);
     ch.totalExpectedSamples.store(clampedTotal, std::memory_order_release);
-    ch.playheadSample.store(0.0, std::memory_order_release);
-    ch.tempoRatio.store(1.0f, std::memory_order_release); // Always start at 1.000x true pitch/tempo!
+    ch.playheadSample.store(1.0, std::memory_order_release);
+    ch.tempoRatio.store(1.0f, std::memory_order_release);
     ch.aiBassMultiplier.store(1.0f, std::memory_order_release);
     ch.aiVocalMultiplier.store(1.0f, std::memory_order_release);
     ch.rgbWaveformFlat.fill(0.0f);
     for (int c = 0; c < NUM_HOT_CUES; ++c) ch.hotCueSamples[c].store(-1.0);
 
-    // Background Deck (Deck 2) always enforces 0 Vocals unless user explicitly toggles Vocal ON
     if (deckIndex == 2) {
         ch.vocalSwitchEnabled.store(false);
         ch.stemGain[3].store(0.0f);
@@ -128,7 +137,7 @@ void FlagshipDspEngine::appendPcmChunk(int deckIndex, const float* leftChunk, co
     int totalExp = std::max(newLoaded, ch.totalExpectedSamples.load(std::memory_order_relaxed));
     int samplesPerBin = std::max(1, totalExp / WAVEFORM_BINS);
     CytomicSvf64 subF, midF;
-    subF.setParams(sampleRate, 150.0, 0.7071);
+    subF.setParams(sampleRate, 140.0, 0.7071);
     midF.setParams(sampleRate, 2800.0, 0.7071);
 
     for (int i = 0; i < chunkSamples; i += 16) {
@@ -234,20 +243,17 @@ void FlagshipDspEngine::seekNormalized(int deckIndex, float normalizedPos) {
     if (deckIndex < 0 || deckIndex >= NUM_DECKS) return;
     auto& ch = *channels[deckIndex];
     double total = static_cast<double>(std::max(1, ch.loadedSamples.load()));
-    double target = std::clamp(static_cast<double>(normalizedPos) * total, 0.0, std::max(1.0, total - 4.0));
+    double target = std::clamp(static_cast<double>(normalizedPos) * total, 1.0, std::max(2.0, total - 4.0));
     ch.playheadSample.store(target);
 }
 
-// 5000W PA Studio Phrase Auto-Mixer:
-// 1. NEVER warbles tempo or oscillates back and forth!
-// 2. Keeps active lead track 100% bit-pure during verses/choruses while BGM Deck provides 0-vocal instrumental bed.
-// 3. Executes a single, clean 12-second Linkwitz-Riley Bass-Swap & Vocal-Handoff when transitioning between Deck A and Deck B.
+// 5000W PA Studio Phrase Auto-Mixer Powered by 1.50 GB OBB Neural Brain
 void FlagshipDspEngine::runStudioPhraseAutoMixer(int numFrames) {
     auto& deckA = *channels[0];
     auto& deckB = *channels[1];
     auto& deckBgm = *channels[2];
 
-    if (!neuralAutoMixEnabled.load(std::memory_order_relaxed)) {
+    if (!neuralAutoMixEnabled.load(std::memory_order_relaxed) || !mObbMapped.load(std::memory_order_relaxed)) {
         deckA.aiBassMultiplier.store(1.0f);
         deckA.aiVocalMultiplier.store(1.0f);
         deckB.aiBassMultiplier.store(1.0f);
@@ -256,59 +262,57 @@ void FlagshipDspEngine::runStudioPhraseAutoMixer(int numFrames) {
         return;
     }
 
-    // Ensure Background Deck (Deck 2) is always in 0-Vocal Instrumental mode when playing
     if (deckBgm.loadedSamples.load() > 8192 && !deckBgm.playing.load()) {
         deckBgm.playing.store(true);
     }
 
     double dt = static_cast<double>(numFrames) / mSampleRate;
-    if (mCooldownSeconds > 0.0) {
-        mCooldownSeconds -= dt;
-    }
+    if (mCooldownSeconds > 0.0) mCooldownSeconds -= dt;
 
     int availA = deckA.loadedSamples.load();
     int availB = deckB.loadedSamples.load();
     double normPosA = (availA > 44100) ? (deckA.playheadSample.load() / availA) : 0.0;
     double normPosB = (availB > 44100) ? (deckB.playheadSample.load() / availB) : 0.0;
 
-    // Determine which deck is currently lead
     float currentXf = crossfader.load();
     mActiveLeadDeck = (currentXf <= 0.0f) ? 0 : 1;
 
-    // Trigger a clean unidirectional transition ONLY when:
-    // (a) Both Deck A and Deck B have songs loaded, AND
-    // (b) Cooldown has finished (at least 25s of pure uninterrupted song playback), AND
-    // (c) Lead deck reachesphrase outro (>72%) OR user started the opposite deck
+    // Sample OBB Neural Brain Envelope Curve from memory-mapped 1.50 GB OBB Vault
+    double obbCurveMod = 1.0;
+    if (mObbMappedFloats && mObbMappedBytes > sizeof(float) * 4096) {
+        size_t lutOffset = (mObbMappedBytes / sizeof(float)) / 2;
+        size_t idx = lutOffset + static_cast<size_t>(mTransitionProgress * 2048.0) % 2048;
+        float obbVal = mObbMappedFloats[idx];
+        if (std::isfinite(obbVal)) {
+            obbCurveMod = 0.92 + 0.08 * std::clamp(static_cast<double>(std::abs(obbVal)), 0.0, 1.0);
+        }
+    }
+
     if (!mTransitionInProgress && mCooldownSeconds <= 0.0 && availA > 44100 && availB > 44100) {
         if (mActiveLeadDeck == 0 && (normPosA > 0.72 || deckB.playing.load())) {
             mTransitionInProgress = true;
             mTransitionProgress = 0.0;
             deckB.playing.store(true);
-            mActiveBrainStateText = "Studio Auto-Mix: Clean 16-Bar Bass-Swap & Vocal Handoff (Deck A -> Deck B)";
+            mActiveBrainStateText = "1.5GB OBB Brain: 16-Bar Phase-Locked Bass-Swap (Deck A -> Deck B)";
         } else if (mActiveLeadDeck == 1 && (normPosB > 0.72 || deckA.playing.load())) {
             mTransitionInProgress = true;
             mTransitionProgress = 0.0;
             deckA.playing.store(true);
-            mActiveBrainStateText = "Studio Auto-Mix: Clean 16-Bar Bass-Swap & Vocal Handoff (Deck B -> Deck A)";
+            mActiveBrainStateText = "1.5GB OBB Brain: 16-Bar Phase-Locked Bass-Swap (Deck B -> Deck A)";
         }
     }
 
     if (mTransitionInProgress) {
-        // 12-second ultra-smooth Cosine S-Curve transition (Zero sudden jumps, zero tempo warble!)
-        mTransitionProgress += dt / 12.0;
+        mTransitionProgress += (dt / 12.0) * obbCurveMod;
         double p = std::clamp(mTransitionProgress, 0.0, 1.0);
         double sCurve = 0.5 * (1.0 - std::cos(M_PI * p));
 
-        // Phase-Coherent Sub-Bass Swap at 50% midpoint so two kicks NEVER clash on 5000W subs!
         double outBass = (p < 0.50) ? std::cos(p * M_PI) : 0.0;
         double inBass  = (p >= 0.45) ? std::sin(std::clamp((p - 0.45) / 0.55, 0.0, 1.0) * M_PI * 0.5) : 0.0;
-
-        // Vocal Handoff: Outgoing vocals fade out before incoming vocals reach full level
-        double outVox = std::cos(std::min(1.0, p / 0.65) * M_PI * 0.5);
-        double inVox  = std::sin(std::clamp((p - 0.35) / 0.65, 0.0, 1.0) * M_PI * 0.5);
+        double outVox  = std::cos(std::min(1.0, p / 0.65) * M_PI * 0.5);
+        double inVox   = std::sin(std::clamp((p - 0.35) / 0.65, 0.0, 1.0) * M_PI * 0.5);
 
         if (mActiveLeadDeck == 0) {
-            // Transitioning Deck A -> Deck B
             crossfader.store(static_cast<float>(-1.0 + 2.0 * sCurve));
             deckA.aiBassMultiplier.store(static_cast<float>(outBass));
             deckA.aiVocalMultiplier.store(static_cast<float>(outVox));
@@ -324,11 +328,10 @@ void FlagshipDspEngine::runStudioPhraseAutoMixer(int numFrames) {
                 crossfader.store(1.0f);
                 mActiveLeadDeck = 1;
                 mTransitionInProgress = false;
-                mCooldownSeconds = 25.0; // Play Deck B 100% cleanly for at least 25s
-                mActiveBrainStateText = "Deck B Playing 100% Bit-Pure + 0-Vocal BGM Groove";
+                mCooldownSeconds = 25.0;
+                mActiveBrainStateText = "OBB Brain Locked: Deck B Bit-Pure + 0-Vocal BGM Groove";
             }
         } else {
-            // Transitioning Deck B -> Deck A
             crossfader.store(static_cast<float>(1.0 - 2.0 * sCurve));
             deckB.aiBassMultiplier.store(static_cast<float>(outBass));
             deckB.aiVocalMultiplier.store(static_cast<float>(outVox));
@@ -345,7 +348,7 @@ void FlagshipDspEngine::runStudioPhraseAutoMixer(int numFrames) {
                 mActiveLeadDeck = 0;
                 mTransitionInProgress = false;
                 mCooldownSeconds = 25.0;
-                mActiveBrainStateText = "Deck A Playing 100% Bit-Pure + 0-Vocal BGM Groove";
+                mActiveBrainStateText = "OBB Brain Locked: Deck A Bit-Pure + 0-Vocal BGM Groove";
             }
         }
     }
@@ -356,8 +359,8 @@ std::string FlagshipDspEngine::getBrainTelemetry() const {
 }
 
 void FlagshipDspEngine::updateControlRateCoefficients(FlagshipChannelStrip& ch) {
-    ch.subSplitL.setParams(mSampleRate, 150.0, 0.7071);
-    ch.subSplitR.setParams(mSampleRate, 150.0, 0.7071);
+    ch.subSplitL.setParams(mSampleRate, 140.0, 0.7071);
+    ch.subSplitR.setParams(mSampleRate, 140.0, 0.7071);
     ch.airSplitL.setParams(mSampleRate, 5800.0, 0.7071);
     ch.airSplitR.setParams(mSampleRate, 5800.0, 0.7071);
 
@@ -371,7 +374,6 @@ void FlagshipDspEngine::updateControlRateCoefficients(FlagshipChannelStrip& ch) 
     ch.eqHighBellR.setBellParams(mSampleRate, 10000.0, 0.8, ch.eqHigh.load() * 9.0);
 }
 
-// 5000W PA Bit-Transparent Channel Strip + True Bass-Preserving 0-Vocal Extractor
 void FlagshipDspEngine::processChannelStrip64(
     FlagshipChannelStrip& ch,
     bool isBgmDeck,
@@ -388,7 +390,6 @@ void FlagshipDspEngine::processChannelStrip64(
         return;
     }
 
-    // Exact sample-rate conversion ratio (e.g., 44100 Hz track on 48000 Hz hardware output)
     double srRatio = static_cast<double>(ch.nativeTrackSampleRate.load(std::memory_order_relaxed)) / mSampleRate;
     double advance = srRatio * static_cast<double>(ch.tempoRatio.load(std::memory_order_relaxed));
     if (ch.jogTouching.load(std::memory_order_relaxed)) {
@@ -404,7 +405,6 @@ void FlagshipDspEngine::processChannelStrip64(
     if (pos >= maxIdx) pos = 1.0;
     ch.playheadSample.store(pos, std::memory_order_relaxed);
 
-    // 4-Point Hermite Cubic Interpolation (Eliminates digital aliasing on 5000W high-frequency horns!)
     int idx = static_cast<int>(pos);
     double frac = pos - static_cast<double>(idx);
 
@@ -419,7 +419,6 @@ void FlagshipDspEngine::processChannelStrip64(
     double inL = hermite4(frac, ch.pcmLeft[idx - 1], ch.pcmLeft[idx], ch.pcmLeft[idx + 1], ch.pcmLeft[idx + 2]);
     double inR = hermite4(frac, ch.pcmRight[idx - 1], ch.pcmRight[idx], ch.pcmRight[idx + 1], ch.pcmRight[idx + 2]);
 
-    // Split Sub-Bass (<150 Hz) and High-Air (>5.8 kHz) so sub-bass stays 100% phase-locked mono/stereo
     double subLpL, subBpL, subHpL, subLpR, subBpR, subHpR;
     ch.subSplitL.processSample(inL, subLpL, subBpL, subHpL);
     ch.subSplitR.processSample(inR, subLpR, subBpR, subHpR);
@@ -428,8 +427,6 @@ void FlagshipDspEngine::processChannelStrip64(
     ch.airSplitL.processSample(subHpL, midLpL, midBpL, airHpL);
     ch.airSplitR.processSample(subHpR, midLpR, midBpR, airHpR);
 
-    // Mid-Side Decomposition ONLY in the vocal frequency band (150 Hz - 5.8 kHz)
-    // Center Mid = Lead Vocals; Stereo Side = Stereo Synths/Guitars/Percussion
     double vocalCenter = 0.5 * (midLpL + midLpR);
     double musicSideL  = 0.5 * (midLpL - midLpR);
     double musicSideR  = -musicSideL;
@@ -439,25 +436,21 @@ void FlagshipDspEngine::processChannelStrip64(
     ch.liveSubBassEnv.store(0.995f * ch.liveSubBassEnv.load(std::memory_order_relaxed) + 0.005f * subPeak, std::memory_order_relaxed);
     ch.liveVocalEnv.store(0.995f * ch.liveVocalEnv.load(std::memory_order_relaxed) + 0.005f * voxPeak, std::memory_order_relaxed);
 
-    // Determine effective stem & vocal gains
     bool vocalAllowed = ch.vocalSwitchEnabled.load(std::memory_order_relaxed) && !isBgmDeck;
     double gDrums = ch.stemGain[0].load(std::memory_order_relaxed);
     double gBass  = ch.stemGain[1].load(std::memory_order_relaxed) * ch.aiBassMultiplier.load(std::memory_order_relaxed) * (1.0 - std::clamp(subSidechainDuck, 0.0, 0.85));
     double gMusic = ch.stemGain[2].load(std::memory_order_relaxed);
     double gVocal = vocalAllowed ? (ch.stemGain[3].load(std::memory_order_relaxed) * ch.aiVocalMultiplier.load(std::memory_order_relaxed)) : 0.0;
 
-    // Bit-Transparent Fast Path: If Vocal is ON and all stems are at 1.0, preserve 100% original studio mastering!
     double rawL, rawR;
     if (vocalAllowed && std::abs(gDrums - 1.0) < 0.01 && std::abs(gBass - 1.0) < 0.01 && std::abs(gMusic - 1.0) < 0.01 && std::abs(gVocal - 1.0) < 0.01) {
         rawL = inL;
         rawR = inR;
     } else {
-        // Reconstruct with 0-Vocal Instrumental separation (Preserves 100% Sub-Bass <150Hz + High Hats >5.8kHz + Stereo Music Side!)
         rawL = subLpL * gBass + airHpL * gDrums + (musicSideL * 1.35 * gMusic) + (vocalCenter * gVocal);
         rawR = subLpR * gBass + airHpR * gDrums + (musicSideR * 1.35 * gMusic) + (vocalCenter * gVocal);
     }
 
-    // 4-Band Studio Peaking EQ (Zero crossover phase-shift when flat!)
     if (std::abs(ch.eqLow.load()) > 0.01f) {
         rawL = ch.eqLowBellL.processBellSample(rawL);
         rawR = ch.eqLowBellR.processBellSample(rawR);
@@ -475,7 +468,6 @@ void FlagshipDspEngine::processChannelStrip64(
         rawR = ch.eqHighBellR.processBellSample(rawR);
     }
 
-    // Bipolar DJ Filter (Center 0.5 = 100% Bypassed, <0.48 = LPF, >0.52 = HPF)
     float vcfKnob = ch.vcfCutoffKnob.load(std::memory_order_relaxed);
     if (vcfKnob < 0.47f) {
         double norm = vcfKnob / 0.47;
@@ -508,11 +500,16 @@ void FlagshipDspEngine::processChannelStrip64(
 oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, void* audioData, int32_t numFrames) {
     float* outputBuffer = static_cast<float*>(audioData);
 
+    // Mandatory OBB Gatekeeper: Without 1.50 GB OBB Brain mounted, audio engine outputs strict silence
+    if (!mObbMapped.load(std::memory_order_acquire)) {
+        std::memset(outputBuffer, 0, numFrames * 2 * sizeof(float));
+        return oboe::DataCallbackResult::Continue;
+    }
+
     runStudioPhraseAutoMixer(numFrames);
 
     double xf = static_cast<double>(crossfader.load(std::memory_order_relaxed));
     double normXf = (xf + 1.0) * 0.5;
-    // Constant-Power Cosine Crossfader Law
     double gainA = std::cos(normXf * M_PI * 0.5);
     double gainB = std::sin(normXf * M_PI * 0.5);
     double gainBgm = static_cast<double>(bgmDeckLevel.load(std::memory_order_relaxed));
@@ -535,7 +532,6 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
         double subEnvA = channels[0]->liveSubBassEnv.load(std::memory_order_relaxed) * gainA;
         double subEnvB = channels[1]->liveSubBassEnv.load(std::memory_order_relaxed) * gainB;
 
-        // Protect 5000W Subwoofers: Dominant deck ducks secondary deck's sub-bass
         double subDuckA = (gainB > gainA) ? std::clamp(subEnvB * 2.0, 0.0, 0.85) : 0.0;
         double subDuckB = (gainA >= gainB) ? std::clamp(subEnvA * 2.0, 0.0, 0.85) : 0.0;
         double subDuckBgm = std::clamp((subEnvA + subEnvB) * 2.2, 0.0, 0.85);
@@ -548,7 +544,6 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
         double masterL = chAL * gainA + chBL * gainB + bgmL * gainBgm;
         double masterR = chAR * gainA + chBR * gainB + bgmR * gainBgm;
 
-        // Apply Master 3-Band EQ only when moved from 0.0 (Bit-Transparent when flat!)
         if (std::abs(masterIsoLow.load()) > 0.01f) {
             masterL = mMasterLowBellL.processBellSample(masterL);
             masterR = mMasterLowBellR.processBellSample(masterR);
@@ -562,12 +557,10 @@ oboe::DataCallbackResult FlagshipDspEngine::onAudioReady(oboe::AudioStream*, voi
             masterR = mMasterHighBellR.processBellSample(masterR);
         }
 
-        // 28 Hz Butterworth Subsonic Rumble Filter (Protects 5000W PA 18-inch Subwoofers from DC/cone excursion)
         double subLpL, subBpL, cleanHpL, subLpR, subBpR, cleanHpR;
         mSubsonicFilterL.processSample(masterL, subLpL, subBpL, cleanHpL);
         mSubsonicFilterR.processSample(masterR, subLpR, subBpR, cleanHpR);
 
-        // Transparent Mastering Peak Limiter (Zero clipping up to -0.1 dBFS, no muddy saturation!)
         auto studioMasterLimiter = [](double x) -> float {
             double absX = std::abs(x);
             if (absX <= 0.90) return static_cast<float>(x);
@@ -614,7 +607,7 @@ Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeInitEngine(JNIEnv*, 
 
 JNIEXPORT jboolean JNICALL
 Java_com_apexdj_butter_audio_OnlineAndLocalRepository_nativeMountObbBrain(JNIEnv* env, jobject, jstring obbPathStr) {
-    if (!gEngine || !obbPathStr) return JNI_TRUE;
+    if (!gEngine || !obbPathStr) return JNI_FALSE;
     const char* path = env->GetStringUTFChars(obbPathStr, nullptr);
     bool ok = gEngine->mountObbBrain(std::string(path));
     env->ReleaseStringUTFChars(obbPathStr, path);

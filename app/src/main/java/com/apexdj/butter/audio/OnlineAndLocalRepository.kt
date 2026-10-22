@@ -44,11 +44,11 @@ class OnlineAndLocalRepository(private val context: Context) {
 
     val obbManager = ObbExpansionManager(context) { obbPath ->
         val ok = nativeMountObbBrain(obbPath)
-        _obbBrainMounted.value = true
+        _obbBrainMounted.value = ok
         ok
     }
 
-    private val _obbBrainMounted = MutableStateFlow(true)
+    private val _obbBrainMounted = MutableStateFlow(false)
     val obbBrainMounted: StateFlow<Boolean> = _obbBrainMounted
 
     private val _waveDeckA = MutableStateFlow(FloatArray(256 * 3))
