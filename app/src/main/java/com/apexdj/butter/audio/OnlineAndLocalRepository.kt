@@ -34,7 +34,8 @@ data class SongTrack(
     val sourceBadge: String,
     val estBpm: Int = 124,
     val isLocal: Boolean = false,
-    val localUri: Uri? = null
+    val localUri: Uri? = null,
+    val bgmPresetIndex: Int = -1
 )
 
 class OnlineAndLocalRepository(private val context: Context) {
@@ -60,26 +61,56 @@ class OnlineAndLocalRepository(private val context: Context) {
     private val _waveDeckBgm = MutableStateFlow(FloatArray(256 * 3))
     val waveDeckBgm: StateFlow<FloatArray> = _waveDeckBgm
 
-    private val _titleDeckA = MutableStateFlow("Deck A — Tap Any Song Below (5000W PA Clarity)")
+    private val _titleDeckA = MutableStateFlow("Deck A — Select 1st Song")
     val titleDeckA: StateFlow<String> = _titleDeckA
 
-    private val _titleDeckB = MutableStateFlow("Deck B — Tap Any Song Below (5000W PA Clarity)")
+    private val _titleDeckB = MutableStateFlow("Deck B — Select 2nd Song (Auto-Mix)")
     val titleDeckB: StateFlow<String> = _titleDeckB
 
-    private val _titleDeckBgm = MutableStateFlow("Background Deck — 0-Vocal Instrumental Mode")
+    private val _titleDeckBgm = MutableStateFlow("∞ BGM #001: 808 Sub-Bass & Kick")
     val titleDeckBgm: StateFlow<String> = _titleDeckBgm
 
     private val _localDeviceSongs = MutableStateFlow<List<SongTrack>>(emptyList())
     val localDeviceSongs: StateFlow<List<SongTrack>> = _localDeviceSongs
 
+    val infinityBgmCatalog: List<SongTrack> = (1..120).map { idx ->
+        val (catName, bpm) = when {
+            idx <= 20  -> "808 Sub-Bass & Trap Kick Groove #${"%03d".format(idx)}" to (100 + (idx % 10) * 2)
+            idx <= 40  -> "Club 4x4 Kick & Deep House Bass #${"%03d".format(idx)}" to (122 + (idx % 8))
+            idx <= 60  -> "Desi Dhol, Tasha & Club Kick Bed #${"%03d".format(idx)}" to (116 + (idx % 10) * 2)
+            idx <= 80  -> "Peak-Time Techno Rolling Bassline #${"%03d".format(idx)}" to (130 + (idx % 10))
+            idx <= 100 -> "Reggaeton Dembow & Moombah Beat #${"%03d".format(idx)}" to (96 + (idx % 10))
+            else       -> "Warm Sub-Drone & Harmonic DJ Pad #${"%03d".format(idx)}" to (120 + (idx % 8))
+        }
+        SongTrack(
+            id = "bgm_preset_$idx",
+            title = "∞ $catName",
+            artist = "Infinity Mode Background Deck (0% Distortion)",
+            durationSec = 999,
+            streamUrl = "",
+            sourceBadge = "∞ INFINITY BGM",
+            estBpm = bpm,
+            bgmPresetIndex = idx
+        )
+    }
+
     init {
         System.loadLibrary("apexdj_engine")
         nativeInitEngine()
-        // Enforce 0 Vocals on Background Deck (Deck 2) by default!
         nativeSetVocalSwitch(2, false)
         repoScope.launch {
             obbManager.scanAndVerifyExistingObb()
             refreshInAppLocalSongs()
+        }
+    }
+
+    fun selectInfinityBgmPreset(presetIndex: Int) {
+        val idx = presetIndex.coerceIn(1, 120)
+        val item = infinityBgmCatalog[idx - 1]
+        _titleDeckBgm.value = item.title
+        repoScope.launch {
+            nativeLoadInfinityBgmBeatPreset(idx)
+            _waveDeckBgm.value = nativeGetRgbWaveform(2)
         }
     }
 
@@ -160,21 +191,7 @@ class OnlineAndLocalRepository(private val context: Context) {
         val trimmed = rawQuery.trim()
         if (trimmed.isEmpty()) return@withContext _localDeviceSongs.value
 
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-            return@withContext listOf(
-                SongTrack(
-                    id = "url_${trimmed.hashCode()}",
-                    title = trimmed.substringAfterLast('/').take(45).ifEmpty { "Direct Stream" },
-                    artist = "Direct Audio Link",
-                    durationSec = 240,
-                    streamUrl = trimmed,
-                    sourceBadge = "DIRECT STREAM"
-                )
-            )
-        }
-
         val encoded = URLEncoder.encode(trimmed, "UTF-8")
-
         supervisorScope {
             val saavnDef = async { searchSaavnSongs(encoded) }
             val pipedDef = async { searchPipedSongs(encoded) }
@@ -200,7 +217,7 @@ class OnlineAndLocalRepository(private val context: Context) {
         val list = mutableListOf<SongTrack>()
         for (base in saavnClusterNodes) {
             runCatching {
-                val req = Request.Builder().url("$base$encodedQuery").header("User-Agent", "ApexDJArgon/15.0").build()
+                val req = Request.Builder().url("$base$encodedQuery").header("User-Agent", "ApexDJArgon/16.0").build()
                 httpClient.newCall(req).execute().use { resp ->
                     if (resp.isSuccessful) {
                         val root = JSONObject(resp.body?.string() ?: "{}")
@@ -326,15 +343,20 @@ class OnlineAndLocalRepository(private val context: Context) {
     fun loadTrackIntoDeckInstant(
         deckIndex: Int,
         track: SongTrack,
-        autoPlay: Boolean = true,
         onStatusUpdate: (String) -> Unit
     ) {
+        if (track.bgmPresetIndex > 0) {
+            selectInfinityBgmPreset(track.bgmPresetIndex)
+            onStatusUpdate("Infinity BGM Loaded: ${track.title}")
+            return
+        }
+
         val deckName = when (deckIndex) {
             0 -> { _titleDeckA.value = "${track.title} — ${track.artist}"; "Deck A" }
             1 -> { _titleDeckB.value = "${track.title} — ${track.artist}"; "Deck B" }
-            else -> { _titleDeckBgm.value = "${track.title} (0-Vocal BGM)"; "Background Deck" }
+            else -> { _titleDeckBgm.value = "∞ ${track.title} (0-Vocal BGM)"; "Background Deck" }
         }
-        onStatusUpdate("$deckName Loaded (0ms): ${track.title}")
+        onStatusUpdate("$deckName Selected: ${track.title}")
 
         deckLoadJobs[deckIndex]?.cancel()
         deckLoadJobs[deckIndex] = repoScope.launch {
@@ -346,7 +368,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                     }
                 } else {
                     val resolvedUrl = resolveStreamUrl(track.streamUrl)
-                    val req = Request.Builder().url(resolvedUrl).header("User-Agent", "Mozilla/5.0 ApexDJArgon/15.0").build()
+                    val req = Request.Builder().url(resolvedUrl).header("User-Agent", "Mozilla/5.0 ApexDJArgon/16.0").build()
                     httpClient.newCall(req).execute().use { resp ->
                         resp.body?.byteStream()?.use { input ->
                             FileOutputStream(cacheFile).use { output ->
@@ -365,7 +387,7 @@ class OnlineAndLocalRepository(private val context: Context) {
                 }
 
                 if (!isActive || !cacheFile.exists() || cacheFile.length() < 1024L) return@launch
-                streamDecodeFileToNativeChunks(deckIndex, cacheFile.absolutePath, track.durationSec, autoPlay)
+                streamDecodeFileToNativeChunks(deckIndex, cacheFile.absolutePath, track.durationSec)
             } catch (_: CancellationException) {
             } catch (e: Throwable) {
                 onStatusUpdate("$deckName Error: ${e.localizedMessage ?: "Check connection"}")
@@ -395,8 +417,7 @@ class OnlineAndLocalRepository(private val context: Context) {
     private suspend fun streamDecodeFileToNativeChunks(
         deckIndex: Int,
         filePath: String,
-        estDurationSec: Int,
-        autoPlay: Boolean
+        estDurationSec: Int
     ) = withContext(Dispatchers.IO) {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
@@ -418,6 +439,7 @@ class OnlineAndLocalRepository(private val context: Context) {
             val channels = runCatching { format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) }.getOrDefault(2).coerceAtLeast(1)
 
             val expectedSamples = (estDurationSec.coerceIn(30, 360)) * sampleRate
+            // Native beginTrackLoad handles 1st-Deck Auto-Play vs 2nd-Deck Muted Standby!
             nativeBeginTrackLoad(deckIndex, expectedSamples, sampleRate)
 
             codec = MediaCodec.createDecoderByType(mime)
@@ -428,7 +450,6 @@ class OnlineAndLocalRepository(private val context: Context) {
             val leftChunk = FloatArray(chunkCap)
             val rightChunk = FloatArray(chunkCap)
             var chunkCursor = 0
-            var firstChunkStarted = false
 
             val bufferInfo = MediaCodec.BufferInfo()
             var isEOS = false
@@ -471,10 +492,6 @@ class OnlineAndLocalRepository(private val context: Context) {
                             if (chunkCursor >= chunkCap) {
                                 nativeAppendPcmChunk(deckIndex, leftChunk, rightChunk, chunkCursor, sampleRate)
                                 updateDeckWaveformFlow(deckIndex)
-                                if (!firstChunkStarted && autoPlay) {
-                                    firstChunkStarted = true
-                                    nativeSetDeckPlayState(deckIndex, true)
-                                }
                                 chunkCursor = 0
                             }
                         }
@@ -490,9 +507,6 @@ class OnlineAndLocalRepository(private val context: Context) {
             if (chunkCursor > 0) {
                 nativeAppendPcmChunk(deckIndex, leftChunk, rightChunk, chunkCursor, sampleRate)
                 updateDeckWaveformFlow(deckIndex)
-                if (!firstChunkStarted && autoPlay) {
-                    nativeSetDeckPlayState(deckIndex, true)
-                }
             }
         } finally {
             runCatching { codec?.stop() }
@@ -529,6 +543,8 @@ class OnlineAndLocalRepository(private val context: Context) {
     external fun nativeIsObbBrainMounted(): Boolean
     external fun nativeBeginTrackLoad(deckIndex: Int, totalExpectedSamples: Int, sampleRate: Int)
     external fun nativeAppendPcmChunk(deckIndex: Int, leftChunk: FloatArray, rightChunk: FloatArray, chunkSamples: Int, sampleRate: Int)
+    external fun nativeLoadInfinityBgmBeatPreset(presetIndex: Int)
+    external fun nativeTriggerSmartTransitionNow()
     external fun nativeSetDeckPlayState(deck: Int, playing: Boolean)
     external fun nativeGetDeckPlayState(deck: Int): Boolean
     external fun nativeSetVocalSwitch(deck: Int, enabled: Boolean)
@@ -538,14 +554,12 @@ class OnlineAndLocalRepository(private val context: Context) {
     external fun nativeStartMasterRecording(wavPath: String): Boolean
     external fun nativeStopMasterRecording()
     external fun nativeIsMasterRecording(): Boolean
-    external fun nativeTriggerHotCue(deck: Int, cueIndex: Int)
-    external fun nativeToggleBeatLoop(deck: Int, beats: Double)
     external fun nativeSeekNormalized(deck: Int, normPos: Float)
     external fun nativeSetChannelParam(deck: Int, paramId: Int, value: Float)
     external fun nativeSetMasterParam(paramId: Int, value: Float)
+    external fun nativeGetCrossfader(): Float
     external fun nativeGetChannelVu(deck: Int): Float
     external fun nativeGetDetectedBpm(deck: Int): Float
-    external fun nativeGetCamelotKey(deck: Int): Int
     external fun nativeGetPlayheadNormalized(deck: Int): Float
     external fun nativeGetRgbWaveform(deck: Int): FloatArray
     external fun nativeGetBrainTelemetry(): String
