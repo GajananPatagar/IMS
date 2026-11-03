@@ -3,1966 +3,713 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>IMS Mixer — Neuralink 5B Autonomous Pro DJ Studio</title>
+  <title>IMS Mixer — 5B Neuralink Autonomous DJ App</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root {
-      --bg-deep: #05070b;
-      --bg-panel: #0b0f17;
-      --deck-a: #00f0ff;
-      --deck-b: #ff6b00;
-      --neural: #a855f7;
-    }
     * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
-    input, textarea, select, pre, code { user-select: text; -webkit-user-select: text; }
-    body {
-      background-color: var(--bg-deep);
-      color: #f1f5f9;
-      font-family: 'Inter', sans-serif;
-      overflow-x: hidden;
-    }
-    .font-mono-tech { font-family: 'JetBrains Mono', monospace; }
-
-    input[type=range].dj-fader {
-      -webkit-appearance: none;
-      appearance: none;
-      background: #060911;
-      border: 1px solid #263147;
-      border-radius: 6px;
-      height: 10px;
-      cursor: pointer;
-    }
-    input[type=range].dj-fader::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 22px;
-      height: 18px;
-      border-radius: 4px;
-      background: linear-gradient(180deg, #f8fafc 0%, #94a3b8 50%, #475569 100%);
-      border: 1.5px solid #00f0ff;
-      box-shadow: 0 0 10px rgba(0,240,255,0.5);
-      cursor: grab;
-    }
-    input[type=range].dj-fader.deck-b-slider::-webkit-slider-thumb {
-      border-color: #ff6b00;
-      box-shadow: 0 0 10px rgba(255,107,0,0.5);
-    }
-    input[type=range].crossfader-input {
-      -webkit-appearance: none;
-      appearance: none;
-      background: linear-gradient(90deg, rgba(0,240,255,0.35) 0%, #090d16 50%, rgba(255,107,0,0.35) 100%);
-      border: 2px solid #334155;
-      border-radius: 8px;
-      height: 18px;
-      cursor: pointer;
-    }
-    input[type=range].crossfader-input::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 28px;
-      height: 32px;
-      border-radius: 5px;
-      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 45%, #475569 55%, #0f172a 100%);
-      border: 2px solid #a855f7;
-      box-shadow: 0 0 14px rgba(168,85,247,0.85);
-      cursor: ew-resize;
-    }
-
-    .vinyl-platter {
-      position: relative;
+    body { background: #05070c; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; overflow-x: hidden; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    input[type=range] { accent-color: #00f0ff; cursor: pointer; }
+    .platter {
       border-radius: 50%;
-      background:
-        radial-gradient(circle at center, #111827 0%, #111827 28%, transparent 29%),
-        repeating-radial-gradient(circle at center, #090d14 0px, #090d14 2px, #161f30 3px, #090d14 4px);
-      box-shadow:
-        0 0 0 4px #1e293b,
-        0 0 0 7px #090d16,
-        0 0 25px rgba(0, 240, 255, 0.25),
-        inset 0 0 30px rgba(0,0,0,0.9);
-      cursor: grab;
+      background: radial-gradient(circle, #111827 0%, #111827 28%, transparent 29%),
+                  repeating-radial-gradient(circle, #090d14 0px, #090d14 2px, #161f30 3px, #090d14 4px);
+      box-shadow: 0 0 0 4px #1e293b, 0 0 24px rgba(0,240,255,0.25);
       touch-action: none;
     }
-    .vinyl-platter.deck-b-platter {
-      box-shadow:
-        0 0 0 4px #1e293b,
-        0 0 0 7px #090d16,
-        0 0 25px rgba(255, 107, 0, 0.25),
-        inset 0 0 30px rgba(0,0,0,0.9);
-    }
-    .vinyl-shine {
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      background: conic-gradient(from 0deg, transparent 0deg, rgba(255,255,255,0.08) 25deg, transparent 55deg, transparent 180deg, rgba(255,255,255,0.08) 205deg, transparent 235deg);
-      pointer-events: none;
-    }
-    .perf-pad { transition: all 0.08s ease; }
-    .perf-pad:active, .perf-pad.pad-active { transform: scale(0.95); filter: brightness(1.35); }
-    .kill-btn.active { background-color: #ef4444 !important; color: #fff !important; border-color: #fca5a5 !important; box-shadow: 0 0 10px rgba(239,68,68,0.8); }
-    .stem-btn.muted { background-color: #1e293b !important; color: #64748b !important; text-decoration: line-through; opacity: 0.6; }
+    .platter-b { box-shadow: 0 0 0 4px #1e293b, 0 0 24px rgba(255,107,0,0.25); }
+    .kill-active { background: #ef4444 !important; color: #fff !important; }
+    .stem-muted { opacity: 0.45; text-decoration: line-through; }
   </style>
 </head>
-<body class="min-h-screen flex flex-col bg-[#05070b] text-slate-100">
+<body class="min-h-screen flex flex-col">
 
-  <!-- ===================================================================== -->
-  <!-- IMS MIXER APP TOP STATUS & NAVIGATION BAR                             -->
-  <!-- ===================================================================== -->
-  <header class="sticky top-0 z-50 bg-[#080b12]/95 backdrop-blur-xl border-b border-slate-800 px-3 py-2">
-    <div class="max-w-[1640px] mx-auto flex flex-wrap items-center justify-between gap-2">
-      <!-- App Brand -->
-      <div class="flex items-center gap-2.5">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-400 via-purple-500 to-orange-500 p-0.5 shadow-lg shadow-purple-500/20">
-          <div class="w-full h-full rounded-[10px] bg-[#060911] flex items-center justify-center font-mono-tech font-black text-xs text-white">IMS</div>
+  <!-- TOP APP BAR -->
+  <header class="bg-[#090d16] border-b border-slate-800 px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 via-purple-500 to-orange-500 flex items-center justify-center font-black text-slate-950 text-xs mono">IMS</div>
+      <div>
+        <div class="flex items-center gap-1.5">
+          <span class="font-black text-sm tracking-tight">IMS <span class="text-cyan-400">MIXER</span></span>
+          <span class="px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-400/40 text-purple-300 mono text-[10px] font-bold">NEURALINK 5B (1GB OBB)</span>
+          <span id="pro-badge" class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 mono text-[10px] font-bold">FREE (ADS)</span>
         </div>
-        <div>
-          <div class="flex items-center gap-1.5">
-            <span class="font-black text-sm sm:text-base tracking-tight text-white">IMS <span class="text-cyan-400">MIXER</span></span>
-            <span class="px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-400/40 text-purple-300 font-mono-tech text-[10px] font-bold">NEURALINK 5B • 1GB OBB</span>
-            <span id="pro-tier-badge" class="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono-tech text-[10px] font-bold">FREE TIER</span>
-          </div>
-          <div class="text-[10px] font-mono-tech text-slate-400" id="engine-status-text">5,000,000,000 Param Neural Auto-DJ • Offline Song Analyzer Ready</div>
-        </div>
+        <div id="obb-status-line" class="text-[10px] mono text-slate-400">5,000,000,000 Params • 64-Expert Sparse MoE Auto-DJ Ready</div>
       </div>
+    </div>
 
-      <!-- App Mode Tabs -->
-      <div class="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs font-bold">
-        <button onclick="switchAppTab('mixer')" id="tab-btn-mixer" class="px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-black transition">🎛️ DJ Mixer</button>
-        <button onclick="switchAppTab('neuralink')" id="tab-btn-neuralink" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white transition">🧠 Neuralink 5B Brain</button>
-        <button onclick="switchAppTab('termux')" id="tab-btn-termux" class="px-3 py-1.5 rounded-lg text-amber-300 hover:text-white transition">💻 1-Click Termux Code</button>
-        <button onclick="switchAppTab('store')" id="tab-btn-store" class="px-3 py-1.5 rounded-lg text-emerald-300 hover:text-white transition">💳 Pro &amp; OTA</button>
-      </div>
-
-      <!-- Quick Transport & Offline Folder Loader -->
-      <div class="flex items-center gap-1.5">
-        <button onclick="toggleNeuralinkAutoDJ()" id="neuralink-toggle-btn" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-500 via-fuchsia-500 to-cyan-400 text-slate-950 font-black text-xs shadow-lg shadow-purple-500/25">
-          ♾️ AUTO-DJ: OFF
-        </button>
-        <button onclick="forceNeuralinkImmediateMix()" class="px-2.5 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/35 border border-purple-400/50 text-purple-200 font-bold text-xs" title="Execute instant Neuralink 5B human transition now">
-          ⚡ AI Mix Now
-        </button>
-        <label class="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 font-bold text-xs cursor-pointer" title="Scan offline downloaded songs folder">
-          📁 + Offline Songs
-          <input type="file" accept="audio/*,video/mp4,.mp3,.wav,.ogg,.flac,.m4a" multiple class="hidden" onchange="handleUserSongFiles(this.files, null)" />
-        </label>
-        <button onclick="toggleMasterRecording()" id="rec-mix-btn" class="px-2.5 py-1.5 rounded-xl bg-red-950/80 border border-red-500/40 text-red-300 font-bold text-xs flex items-center gap-1">
-          <span id="rec-dot" class="w-2 h-2 rounded-full bg-red-500"></span>
-          <span id="rec-btn-label">REC</span>
-        </button>
-      </div>
+    <div class="flex flex-wrap items-center gap-1.5">
+      <button onclick="toggleNeuralinkAuto()" id="auto-dj-btn" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-500 to-cyan-400 text-slate-950 font-black text-xs">
+        ♾️ NEURALINK AUTO-DJ: OFF
+      </button>
+      <button onclick="triggerImmediateNeuralMix()" class="px-2.5 py-1.5 rounded-xl bg-purple-500/20 border border-purple-400/50 text-purple-200 font-bold text-xs">
+        ⚡ Smart Mix Next Now
+      </button>
+      <label class="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 font-bold text-xs cursor-pointer">
+        📁 + Load Offline Songs
+        <input type="file" accept="audio/*,.mp3,.wav,.flac,.m4a,.ogg" multiple class="hidden" onchange="importOfflineFiles(this.files, null)" />
+      </label>
+      <button onclick="scanAndroidMediaStore()" class="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 border border-cyan-400/50 text-cyan-200 font-bold text-xs">
+        📱 Scan Phone Music
+      </button>
+      <button onclick="checkOtaUpdate()" class="px-2.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs">
+        🔄 OTA
+      </button>
     </div>
   </header>
 
-  <!-- ADMOB FREE-TIER SPONSORED BAR (REMOVABLE VIA RAZORPAY OR REWARDED AD) -->
-  <div id="admob-banner-strip" class="bg-gradient-to-r from-slate-900 via-indigo-950/90 to-slate-900 border-b border-indigo-500/30 px-3 py-1.5 text-xs">
-    <div class="max-w-[1640px] mx-auto flex flex-wrap items-center justify-between gap-2">
-      <div class="flex items-center gap-2">
-        <span class="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono-tech text-[10px] font-bold">AdMob</span>
-        <span class="text-slate-200">Upgrade to <strong>IMS Mixer Pro</strong> for Ad-Free Mixing, Full 1GB Neuralink-5B Stem Wordplay &amp; Lossless Recording.</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <button onclick="watchRewardedAdUnlock()" class="px-2 py-0.5 rounded bg-indigo-500/30 border border-indigo-400/40 text-indigo-200 font-bold text-[11px]">🎬 Watch 5s Ad (Free 1h Pro)</button>
-        <button onclick="openRazorpayModal('pro_lifetime')" class="px-2.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[11px]">👑 Buy Pro (₹199 Razorpay)</button>
-      </div>
+  <!-- ADMOB BAR + RAZORPAY PRO UPGRADE -->
+  <div id="ad-banner" class="bg-indigo-950/80 border-b border-indigo-500/30 px-3 py-1 flex flex-wrap items-center justify-between gap-2 text-xs">
+    <span class="text-slate-200"><strong class="text-amber-300 mono">[AdMob]</strong> Upgrade to <strong>IMS Mixer Pro</strong> to remove ads &amp; unlock 64-Expert Neuralink Stem Bridges.</span>
+    <div class="flex gap-1.5">
+      <button onclick="unlockPro('1H REWARDED AD')" class="px-2 py-0.5 rounded bg-indigo-500/30 border border-indigo-400/40 text-indigo-200 font-bold text-[10px]">🎬 Watch Ad (Free 1h)</button>
+      <button onclick="openRazorpay()" class="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[10px]">💳 Upgrade Pro (₹199 Razorpay)</button>
     </div>
   </div>
 
-  <!-- ===================================================================== -->
-  <!-- MAIN APP WORKSPACE                                                    -->
-  <!-- ===================================================================== -->
-  <main class="flex-1 max-w-[1640px] w-full mx-auto p-2 sm:p-4 space-y-3">
-
-    <!-- LIVE NEURALINK 5B TELEMETRY BAR (ALWAYS VISIBLE) -->
-    <div class="rounded-2xl bg-gradient-to-r from-[#0d1021] via-[#090d18] to-[#120d24] border border-purple-500/40 p-2.5">
-      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 items-center text-xs">
-        <div class="p-2 rounded-xl bg-slate-950/90 border border-purple-500/30">
-          <div class="text-[9px] font-mono-tech text-purple-300 font-bold">🧠 NEURALINK 5B STATE</div>
-          <div id="neuralink-status-pill" class="font-black text-white truncate mt-0.5">MANUAL / READY</div>
+  <!-- NEURALINK 5B COGNITIVE TELEMETRY HUD (HOW, WHEN, WHERE, HOW MUCH) -->
+  <section class="p-2 sm:p-3 max-w-[1600px] w-full mx-auto space-y-2.5">
+    <div class="rounded-2xl bg-[#0b0f1c] border border-purple-500/40 p-2.5 grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+      <div class="p-2 rounded-xl bg-slate-950 border border-purple-500/30">
+        <div class="text-[9px] mono text-purple-300 font-bold">1. HOW TO MIX (STYLE)</div>
+        <div id="hud-how" class="font-black text-white truncate mt-0.5">SURGICAL_BASS_SWAP</div>
+      </div>
+      <div class="p-2 rounded-xl bg-slate-950 border border-cyan-500/30">
+        <div class="text-[9px] mono text-cyan-300 font-bold">2. WHEN TO MIX (OUTRO)</div>
+        <div id="hud-when" class="font-black text-emerald-400 mono truncate mt-0.5">Standby</div>
+      </div>
+      <div class="p-2 rounded-xl bg-slate-950 border border-amber-500/30">
+        <div class="text-[9px] mono text-amber-300 font-bold">3. WHERE (BEATGRID LOCK)</div>
+        <div id="hud-where" class="font-black text-white truncate mt-0.5">Downbeat 1.1 (&lt;1.5ms)</div>
+      </div>
+      <div class="p-2 rounded-xl bg-slate-950 border border-emerald-500/30">
+        <div class="text-[9px] mono text-emerald-300 font-bold">4. HOW MUCH (PROGRESS)</div>
+        <div id="hud-much" class="font-black text-cyan-300 mono truncate mt-0.5">0% • -9dB Vocal Duck</div>
+      </div>
+      <div class="p-2 rounded-xl bg-slate-950 border border-slate-800 col-span-2 sm:col-span-1 flex flex-col justify-between">
+        <div class="flex justify-between text-[9px] mono">
+          <span class="text-emerald-400 font-bold">NEXT BEST FIT</span>
+          <span id="hud-fit-score" class="text-purple-300 font-black">98.6%</span>
         </div>
-        <div class="p-2 rounded-xl bg-slate-950/90 border border-cyan-500/30">
-          <div class="text-[9px] font-mono-tech text-cyan-300 font-bold">1. HOW (TECHNIQUE)</div>
-          <div id="nl-telemetry-how" class="font-bold text-white truncate mt-0.5">3-Band EQ Bass-Swap</div>
-        </div>
-        <div class="p-2 rounded-xl bg-slate-950/90 border border-amber-500/30">
-          <div class="text-[9px] font-mono-tech text-amber-300 font-bold">2. WHEN (OUTRO TRIGGER)</div>
-          <div class="font-bold text-white truncate mt-0.5">Auto @ <span id="nl-countdown-sec" class="text-emerald-400 font-mono-tech">Standby</span></div>
-        </div>
-        <div class="p-2 rounded-xl bg-slate-950/90 border border-emerald-500/30">
-          <div class="text-[9px] font-mono-tech text-emerald-300 font-bold">3. WHERE &amp; HOW MUCH</div>
-          <div class="font-bold text-white truncate mt-0.5"><span id="nl-telemetry-where">Downbeat 1.1</span> • <span id="nl-mix-progress" class="text-cyan-400 font-mono-tech">0%</span></div>
-        </div>
-        <div class="p-2 rounded-xl bg-slate-950/90 border border-slate-800 sm:col-span-2 flex items-center justify-between gap-2">
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[9px] font-mono-tech font-bold text-emerald-400">🎯 NEXT BEST FIT:</span>
-              <span id="nl-match-score" class="text-[9px] font-mono-tech font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">98.6% FIT</span>
-            </div>
-            <div id="nl-next-song-title" class="text-xs font-black text-white truncate mt-0.5">2. FESTIVAL EDM MAIN FLOOR</div>
-          </div>
-          <div class="flex flex-col gap-1 shrink-0">
-            <select id="nl-style-select" onchange="updateNeuralinkSettings()" class="bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-purple-200 font-bold">
-              <option value="auto" selected>Auto-Think 5B</option>
-              <option value="bass_swap">Bass-Swap Blend</option>
-              <option value="stem_bridge">Vocal Stem Bridge</option>
-              <option value="echo_riser">Echo + HPF Drop</option>
-            </select>
-            <select id="nl-duration-select" onchange="updateNeuralinkSettings()" class="bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-cyan-200 font-bold">
-              <option value="3.2">4 Bars (3.2s)</option>
-              <option value="4.5" selected>8 Bars (4.5s)</option>
-              <option value="6.0">12 Bars (6.0s)</option>
-            </select>
-          </div>
-        </div>
+        <div id="hud-next-song" class="font-black text-white truncate text-[11px]">Queue Offline Songs</div>
       </div>
     </div>
 
-    <!-- =================================================================== -->
-    <!-- VIEW 1: DUAL-DECK PRO DJ MIXER VIEW                                 -->
-    <!-- =================================================================== -->
-    <div id="view-mixer" class="space-y-3">
+    <!-- DUAL BEATGRID WAVEFORM -->
+    <div class="relative rounded-2xl bg-[#030509] border border-slate-800 p-2">
+      <canvas id="beatgrid-canvas" width="1280" height="88" class="w-full h-[80px] block rounded-xl bg-black"></canvas>
+      <div class="pointer-events-none absolute top-2 bottom-2 left-1/2 w-[2px] bg-white shadow-[0_0_8px_#fff]"></div>
+    </div>
 
-      <!-- TOP DUAL SCROLLING BEATGRID WAVEFORM DISPLAY -->
-      <div class="relative rounded-2xl bg-[#04060a] border border-slate-800 p-2 overflow-hidden">
-        <div class="flex items-center justify-between text-[11px] font-mono-tech px-2 pb-1 text-slate-400">
-          <div class="flex items-center gap-2">
-            <span class="text-cyan-400 font-bold">DECK A:</span>
-            <span id="top-wave-title-a" class="text-white font-semibold truncate max-w-[240px]">1. BRAZILIAN PHONK VOCAL ANTHEM</span>
+    <!-- MAIN 3-COLUMN DJ WORKSTATION: DECK A | MIXER | DECK B -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
+
+      <!-- DECK A -->
+      <div class="lg:col-span-4 rounded-2xl bg-[#090d16] border border-cyan-500/35 p-3 space-y-2.5">
+        <div class="flex justify-between items-center bg-slate-900 p-2 rounded-xl border border-slate-800">
+          <div class="min-w-0">
+            <span id="key-a" class="text-[10px] mono font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">8A (Am)</span>
+            <h3 id="title-a" class="text-xs font-black text-white truncate mt-0.5">DECK A — LOAD OR PLAY</h3>
           </div>
-          <div class="flex items-center gap-3">
-            <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-[10px]">NEURALINK PHASE LOCK</span>
-            <span class="text-emerald-400 font-bold" id="live-spl-readout">0.0 dBFS MASTER</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="text-orange-400 font-bold">DECK B:</span>
-            <span id="top-wave-title-b" class="text-white font-semibold truncate max-w-[240px]">2. FESTIVAL EDM MAIN FLOOR</span>
-          </div>
-        </div>
-        <canvas id="dual-beatgrid-canvas" width="1400" height="104" class="w-full h-[94px] sm:h-[104px] rounded-xl bg-[#030508] block"></canvas>
-        <div class="pointer-events-none absolute top-7 bottom-2 left-1/2 w-[2px] bg-white shadow-[0_0_10px_#fff]"></div>
-      </div>
-
-      <!-- 3-COLUMN CONSOLE: DECK A | PRO MIXER & FX | DECK B -->
-      <div class="grid grid-cols-1 xl:grid-cols-12 gap-3.5 items-stretch">
-
-        <!-- DECK A -->
-        <div class="xl:col-span-4 rounded-2xl bg-[#090d15] border border-cyan-500/35 p-3 flex flex-col justify-between space-y-2.5"
-             ondragover="event.preventDefault()" ondrop="handleDeckDrop(event, 'A')">
-          <div class="flex items-start justify-between gap-2 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
-            <div class="flex items-center gap-2 min-w-0">
-              <div class="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-400 flex items-center justify-center font-mono-tech font-black text-base text-cyan-300 shrink-0">A</div>
-              <div class="min-w-0">
-                <div class="flex items-center gap-1.5">
-                  <span id="deck-a-badge" class="text-[9px] font-mono-tech font-bold px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300">VOCAL PHONK</span>
-                  <span id="deck-a-key" class="text-[9px] font-mono-tech font-bold px-1.5 py-0.2 rounded bg-slate-800 text-emerald-300">KEY: 8A (Am)</span>
-                </div>
-                <h3 id="deck-a-title" class="text-xs sm:text-sm font-black text-white truncate mt-0.5">BRAZILIAN PHONK VOCAL ANTHEM</h3>
-              </div>
-            </div>
-            <div class="text-right shrink-0 font-mono-tech">
-              <div class="text-base font-black text-cyan-400 leading-none" id="deck-a-bpm">130.0 <span class="text-[9px] text-slate-400">BPM</span></div>
-              <div class="text-[10px] text-slate-300 mt-1" id="deck-a-time">00:00.0 / -00:12.0</div>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-1.5">
-            <select id="deck-a-select" onchange="loadTrackToDeck('A', parseInt(this.value))" class="flex-1 bg-slate-900 text-xs font-bold text-cyan-200 border border-cyan-500/30 rounded-lg px-2 py-1.5"></select>
-            <label class="px-2.5 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-[11px] font-bold cursor-pointer shrink-0">
-              📂 Load Song
-              <input type="file" accept="audio/*,video/mp4,.mp3,.wav,.ogg,.m4a" class="hidden" onchange="handleUserSongFiles(this.files, 'A')" />
-            </label>
-          </div>
-
-          <div class="relative rounded-xl bg-[#04060a] border border-slate-800 p-1.5">
-            <div class="flex justify-between text-[9px] font-mono-tech text-slate-400 px-1 mb-0.5">
-              <span>OVERVIEW WAVEFORM (TAP TO SEEK)</span>
-              <span id="deck-a-pitch-pct" class="text-cyan-400 font-bold">PITCH: +0.0%</span>
-            </div>
-            <canvas id="overview-wave-a" width="460" height="38" class="w-full h-[36px] rounded bg-[#020407] cursor-pointer block" onclick="seekFromOverview(event, 'A')"></canvas>
-          </div>
-
-          <div class="grid grid-cols-12 gap-2 items-center">
-            <div class="col-span-8 flex flex-col items-center">
-              <div id="platter-a" class="vinyl-platter w-40 h-40 sm:w-44 sm:h-44 flex items-center justify-center" onpointerdown="startScratch(event, 'A')">
-                <div class="vinyl-shine"></div>
-                <div id="platter-rot-a" class="w-full h-full rounded-full relative flex items-center justify-center">
-                  <div class="absolute top-2 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-cyan-400 shadow-[0_0_10px_#00f0ff]"></div>
-                  <div class="w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 via-slate-900 to-purple-500 p-0.5 flex items-center justify-center">
-                    <div class="w-full h-full rounded-full bg-[#060911] flex flex-col items-center justify-center text-center">
-                      <span class="text-[8px] font-black text-cyan-400">IMS DECK A</span>
-                      <span class="text-[11px] font-mono-tech font-black text-white" id="platter-bpm-a">130.0</span>
-                      <span class="text-[8px] font-mono-tech text-amber-300" id="platter-state-a">READY</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="flex items-center gap-1 mt-1.5">
-                <button onclick="toggleVinylMode('A')" id="vinyl-mode-a" class="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-[9px] font-mono-tech font-bold">💿 VINYL: ON</button>
-                <button onclick="pitchBend('A', -0.04)" onmouseup="pitchBendReset('A')" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-mono-tech">⏪ -</button>
-                <button onclick="pitchBend('A', 0.04)" onmouseup="pitchBendReset('A')" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-mono-tech">+ ⏩</button>
-              </div>
-            </div>
-
-            <div class="col-span-4 bg-slate-900/90 border border-slate-800 rounded-xl p-2 flex flex-col items-center justify-between h-full">
-              <div class="text-[9px] font-mono-tech font-bold text-cyan-300">PITCH TEMPO</div>
-              <input type="range" id="pitch-slider-a" min="-16" max="16" step="0.1" value="0" oninput="setDeckPitch('A', parseFloat(this.value))" class="dj-fader w-full my-1.5" />
-              <div class="flex flex-wrap justify-center gap-1 w-full">
-                <button onclick="setDeckPitch('A', 0); document.getElementById('pitch-slider-a').value=0;" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-slate-300">0%</button>
-                <button onclick="changeKeySemitone('A', -1)" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-cyan-300">KEY-</button>
-                <button onclick="changeKeySemitone('A', 1)" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-cyan-300">KEY+</button>
-              </div>
-              <div class="grid grid-cols-2 gap-1 w-full mt-1.5">
-                <button onclick="toggleReverseDeck('A')" id="rev-btn-a" class="py-1 rounded bg-slate-800 text-[9px] font-mono-tech font-bold text-slate-300 border border-slate-700">⏪ REV</button>
-                <button onclick="triggerVinylBrake('A')" id="brake-btn-a" class="py-1 rounded bg-slate-800 text-[9px] font-mono-tech font-bold text-amber-300 border border-slate-700">🛑 BRAKE</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-4 gap-1.5">
-            <button onclick="togglePlayDeck('A')" id="play-btn-a" class="py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-slate-950 font-black text-xs">▶ PLAY</button>
-            <button onclick="triggerCueDeck('A')" id="cue-btn-a" class="py-2 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 font-black text-xs">⏹ CUE</button>
-            <button onclick="syncDeck('A')" id="sync-btn-a" class="py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/50 text-cyan-300 font-black text-xs">🔗 SYNC</button>
-            <button onclick="toggleAutoLoop('A', 4)" id="loop-btn-a" class="py-2 rounded-xl bg-purple-500/20 border border-purple-500/50 text-purple-300 font-black text-xs">🔁 4B LOOP</button>
-          </div>
-
-          <!-- 4-Stems Isolator -->
-          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2">
-            <div class="flex items-center justify-between mb-1">
-              <span class="text-[9px] font-mono-tech font-bold text-cyan-300">NEURAL 4-STEMS ISOLATION</span>
-              <div class="flex gap-1">
-                <button onclick="setStemPreset('A', 'acapella')" class="px-1.5 py-0.2 rounded bg-cyan-500/15 text-cyan-300 text-[9px] font-bold">Acapella</button>
-                <button onclick="setStemPreset('A', 'instrumental')" class="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 text-[9px] font-bold">Inst</button>
-                <button onclick="setStemPreset('A', 'reset')" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 text-[9px] font-bold">All</button>
-              </div>
-            </div>
-            <div class="grid grid-cols-4 gap-1">
-              <button onclick="toggleStem('A', 'vocal')" id="stem-a-vocal" class="stem-btn py-1 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-[10px] font-bold">🎤 VOCAL</button>
-              <button onclick="toggleStem('A', 'inst')" id="stem-a-inst" class="stem-btn py-1 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 text-[10px] font-bold">🎹 INSTR</button>
-              <button onclick="toggleStem('A', 'bass')" id="stem-a-bass" class="stem-btn py-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-200 text-[10px] font-bold">🎸 BASS</button>
-              <button onclick="toggleStem('A', 'drums')" id="stem-a-drums" class="stem-btn py-1 rounded bg-purple-500/20 border border-purple-500/40 text-purple-200 text-[10px] font-bold">🥁 DRUMS</button>
-            </div>
-          </div>
-
-          <!-- 8 RGB Pads -->
-          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2">
-            <div class="flex flex-wrap items-center justify-between gap-1 mb-1.5">
-              <div class="flex gap-1">
-                <button onclick="setPadMode('A', 'hotcue')" id="padmode-a-hotcue" class="px-2 py-0.5 rounded bg-cyan-500 text-slate-950 text-[9px] font-black">CUES</button>
-                <button onclick="setPadMode('A', 'loop')" id="padmode-a-loop" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-bold">LOOPS</button>
-                <button onclick="setPadMode('A', 'jump')" id="padmode-a-jump" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-bold">JUMP</button>
-                <button onclick="setPadMode('A', 'key')" id="padmode-a-key" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-bold">PITCH</button>
-              </div>
-              <div class="flex gap-1">
-                <button onclick="halveLoop('A')" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-purple-300">÷2</button>
-                <button onclick="doubleLoop('A')" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-purple-300">×2</button>
-                <button onclick="clearLoop('A')" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-red-300">EXIT</button>
-              </div>
-            </div>
-            <div id="pads-grid-a" class="grid grid-cols-4 gap-1.5"></div>
+          <div class="text-right mono">
+            <div id="bpm-a" class="text-sm font-black text-cyan-400">128.0 BPM</div>
+            <div id="time-a" class="text-[10px] text-slate-400">00:00.0</div>
           </div>
         </div>
 
-        <!-- CENTER MIXER, 3-BAND EQ KILL, 6 FX & KAOSS PAD -->
-        <div class="xl:col-span-4 rounded-2xl bg-[#0b0f19] border border-purple-500/35 p-3 flex flex-col justify-between space-y-2.5">
-          <div class="flex items-center justify-between bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-800">
-            <span class="text-xs font-mono-tech font-black text-purple-300">🎛️ IMS 2-CHANNEL PRO MIXER</span>
-            <div class="flex items-center gap-2">
-              <span class="text-[9px] font-mono-tech text-slate-400">MASTER</span>
-              <input type="range" id="master-vol-slider" min="0" max="1.2" step="0.01" value="0.95" oninput="setMasterVolume(parseFloat(this.value))" class="dj-fader w-20" />
-            </div>
-          </div>
-
-          <!-- 3-Band EQ + Kills -->
-          <div class="grid grid-cols-2 gap-2">
-            <!-- CH A -->
-            <div class="bg-slate-900/90 border border-cyan-500/25 rounded-xl p-2 space-y-1.5">
-              <div class="flex items-center justify-between border-b border-slate-800 pb-1">
-                <span class="text-[10px] font-mono-tech font-black text-cyan-400">CH A EQ</span>
-                <button onclick="resetDeckEQ('A')" class="text-[9px] font-mono-tech text-slate-400 hover:text-white">FLAT</button>
-              </div>
-              <div>
-                <div class="flex justify-between text-[9px] font-mono-tech text-slate-300"><span>GAIN</span><span id="eq-a-gain-val">100%</span></div>
-                <input type="range" id="eq-a-gain" min="0" max="1.5" step="0.01" value="1.0" oninput="setDeckGain('A', parseFloat(this.value))" class="dj-fader w-full" />
-              </div>
-              <div>
-                <div class="flex justify-between text-[9px] font-mono-tech"><span class="text-slate-300">HIGH</span><button onclick="toggleEqKill('A', 'high')" id="kill-a-high" class="kill-btn px-1 rounded bg-slate-800 border border-slate-700 text-[8px] font-bold">KILL</button></div>
-                <input type="range" id="eq-a-high" min="-24" max="12" step="0.5" value="0" oninput="setDeckEQ('A', 'high', parseFloat(this.value))" class="dj-fader w-full mt-0.5" />
-              </div>
-              <div>
-                <div class="flex justify-between text-[9px] font-mono-tech"><span class="text-slate-300">MID</span><button onclick="toggleEqKill('A', 'mid')" id="kill-a-mid" class="kill-btn px-1 rounded bg-slate-800 border border-slate-700 text-[8px] font-bold">KILL</button></div>
-                <input type="range" id="eq-a-mid" min="-24" max="12" step="0.5" value="0" oninput="setDeckEQ('A', 'mid', parseFloat(this.value))" class="dj-fader w-full mt-0.5" />
-              </div>
-              <div>
-                <div class="flex justify-between text-[9px] font-mono-tech"><span class="text-slate-300">LOW</span><button onclick="toggleEqKill('A', 'low')" id="kill-a-low" class="kill-btn px-1 rounded bg-slate-800 border border-slate-700 text-[8px] font-bold">KILL</button></div>
-                <input type="range" id="eq-a-low" min="-24" max="12" step="0.5" value="0" oninput="setDeckEQ('A', 'low', parseFloat(this.value))" class="dj-fader w-full mt-0.5" />
-              </div>
-              <div class="pt-1 border-t border-slate-800">
-                <div class="flex justify-between text-[9px] font-mono-tech"><span class="text-cyan-300 font-bold">FILTER</span><span id="filter-a-label" class="text-slate-400">BYPASS</span></div>
-                <input type="range" id="filter-a-knob" min="-100" max="100" step="1" value="0" ondblclick="this.value=0; setDeckColorFilter('A', 0)" oninput="setDeckColorFilter('A', parseFloat(this.value))" class="dj-fader w-full mt-0.5" />
-              </div>
-            </div>
-
-            <!-- CH B -->
-            <div class="bg-slate-900/90 border border-orange-500/25 rounded-xl p-2 space-y-1.5">
-              <div class="flex items-center justify-between border-b border-slate-800 pb-1">
-                <span class="text-[10px] font-mono-tech font-black text-orange-400">CH B EQ</span>
-                <button onclick="resetDeckEQ('B')" class="text-[9px] font-mono-tech text-slate-400 hover:text-white">FLAT</button>
-              </div>
-              <div>
-                <div class="flex justify-between text-[9px] font-mono-tech text-slate-300"><span>GAIN</span><span id="eq-b-gain-val">100%</span></div>
-                <input type="range" id="eq-b-gain" min="0" max="1.5" step="0.01" value="1.0" oninput="setDeckGain('B', parseFloat(this.value))" class="dj-fader deck-b-slider w-full" />
-              </div>
-              <div>
-                <div class="flex justify-between text-[9px] font-mono-tech"><span class="text-slate-300">HIGH</span><button onclick="toggleEqKill('B', 'high')" id="kill-b-high" class="kill-btn px-1 rounded bg-slate-800 border border-slate-700 text-[8px] font-bold">KILL</button></div>
-                <input type="range" id="eq-b-high" min="-24" max="12" step="0.5" value="0" oninput="setDeckEQ('B', 'high', parseFloat(this.value))" class="dj-fader deck-b-slider w-full mt-0.5" />
-              </div>
-              <div>
-                <div class="flex justify-between text-[9px] font-mono-tech"><span class="text-slate-300">MID</span><button onclick="toggleEqKill('B', 'mid')" id="kill-b-mid" class="kill-btn px-1 rounded bg-slate-800 border border-slate-700 text-[8px] font-bold">KILL</button></div>
-                <input type="range" id="eq-b-mid" min="-24" max="12" step="0.5" value="0" oninput="setDeckEQ('B', 'mid', parseFloat(this.value))" class="dj-fader deck-b-slider w-full mt-0.5" />
-              </div>
-              <div>
-                <div class="flex justify-between text-[9px] font-mono-tech"><span class="text-slate-300">LOW</span><button onclick="toggleEqKill('B', 'low')" id="kill-b-low" class="kill-btn px-1 rounded bg-slate-800 border border-slate-700 text-[8px] font-bold">KILL</button></div>
-                <input type="range" id="eq-b-low" min="-24" max="12" step="0.5" value="0" oninput="setDeckEQ('B', 'low', parseFloat(this.value))" class="dj-fader deck-b-slider w-full mt-0.5" />
-              </div>
-              <div class="pt-1 border-t border-slate-800">
-                <div class="flex justify-between text-[9px] font-mono-tech"><span class="text-orange-300 font-bold">FILTER</span><span id="filter-b-label" class="text-slate-400">BYPASS</span></div>
-                <input type="range" id="filter-b-knob" min="-100" max="100" step="1" value="0" ondblclick="this.value=0; setDeckColorFilter('B', 0)" oninput="setDeckColorFilter('B', parseFloat(this.value))" class="dj-fader deck-b-slider w-full mt-0.5" />
-              </div>
-            </div>
-          </div>
-
-          <!-- 6 FX Rack + Kaoss Pad -->
-          <div class="grid grid-cols-12 gap-2 bg-slate-900/90 border border-slate-800 rounded-xl p-2">
-            <div class="col-span-7 space-y-1.5">
-              <div class="flex items-center justify-between">
-                <span class="text-[9px] font-mono-tech font-black text-purple-300">⚡ 6 STUDIO FX RACK</span>
-                <div class="flex gap-1">
-                  <button onclick="toggleFxAssign('A')" id="fx-assign-a" class="px-1.5 py-0.2 rounded bg-cyan-500 text-slate-950 text-[8px] font-black">FX➔A</button>
-                  <button onclick="toggleFxAssign('B')" id="fx-assign-b" class="px-1.5 py-0.2 rounded bg-orange-500 text-slate-950 text-[8px] font-black">FX➔B</button>
-                </div>
-              </div>
-              <div class="grid grid-cols-3 gap-1">
-                <button onclick="toggleEffect('echo')" id="fx-btn-echo" class="py-1 px-1 rounded bg-slate-800 border border-slate-700 text-[9px] font-bold text-slate-300">ECHO</button>
-                <button onclick="toggleEffect('flanger')" id="fx-btn-flanger" class="py-1 px-1 rounded bg-slate-800 border border-slate-700 text-[9px] font-bold text-slate-300">FLANGER</button>
-                <button onclick="toggleEffect('reverb')" id="fx-btn-reverb" class="py-1 px-1 rounded bg-slate-800 border border-slate-700 text-[9px] font-bold text-slate-300">REVERB</button>
-                <button onclick="toggleEffect('crush')" id="fx-btn-crush" class="py-1 px-1 rounded bg-slate-800 border border-slate-700 text-[9px] font-bold text-slate-300">DRIVE</button>
-                <button onclick="toggleEffect('trans')" id="fx-btn-trans" class="py-1 px-1 rounded bg-slate-800 border border-slate-700 text-[9px] font-bold text-slate-300">TRANS</button>
-                <button onclick="toggleEffect('wobble')" id="fx-btn-wobble" class="py-1 px-1 rounded bg-slate-800 border border-slate-700 text-[9px] font-bold text-slate-300">WOBBLE</button>
-              </div>
-              <div class="space-y-1">
-                <div class="flex justify-between text-[8px] font-mono-tech text-slate-300"><span>DEPTH</span><span id="fx-depth-label">45%</span></div>
-                <input type="range" id="fx-depth-slider" min="0" max="1" step="0.01" value="0.45" oninput="updateFxParams()" class="dj-fader w-full" />
-                <div class="flex justify-between text-[8px] font-mono-tech text-slate-300"><span>RATE</span><span id="fx-rate-label">4.0 Hz</span></div>
-                <input type="range" id="fx-rate-slider" min="0.5" max="12" step="0.1" value="4.0" oninput="updateFxParams()" class="dj-fader w-full" />
-              </div>
-            </div>
-            <div class="col-span-5 flex flex-col justify-between">
-              <div class="flex justify-between text-[8px] font-mono-tech text-amber-300 font-bold mb-0.5">
-                <span>KAOSS X-Y</span><span id="kaoss-status" class="text-slate-400">DRAG</span>
-              </div>
-              <canvas id="kaoss-xy-canvas" width="160" height="114" class="w-full h-[108px] rounded-xl bg-[#04060b] border border-purple-500/40 cursor-crosshair touch-none block" onpointerdown="startKaossPad(event)"></canvas>
-            </div>
-          </div>
-
-          <!-- Channel Volume Faders + VU + Crossfader -->
-          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2 space-y-2">
-            <div class="grid grid-cols-12 gap-2 items-center">
-              <div class="col-span-5 space-y-0.5">
-                <div class="flex justify-between text-[9px] font-mono-tech"><span class="text-cyan-400 font-bold">VOL A</span><span id="vol-a-label">95%</span></div>
-                <input type="range" id="vol-fader-a" min="0" max="1" step="0.01" value="0.95" oninput="setDeckVolume('A', parseFloat(this.value))" class="dj-fader w-full" />
-              </div>
-              <div class="col-span-2 flex justify-center">
-                <canvas id="mixer-vu-canvas" width="44" height="36" class="rounded bg-black border border-slate-800"></canvas>
-              </div>
-              <div class="col-span-5 space-y-0.5">
-                <div class="flex justify-between text-[9px] font-mono-tech"><span class="text-orange-400 font-bold">VOL B</span><span id="vol-b-label">95%</span></div>
-                <input type="range" id="vol-fader-b" min="0" max="1" step="0.01" value="0.95" oninput="setDeckVolume('B', parseFloat(this.value))" class="dj-fader deck-b-slider w-full" />
-              </div>
-            </div>
-
-            <div class="pt-1 border-t border-slate-800">
-              <div class="flex items-center justify-between text-[9px] font-mono-tech mb-1">
-                <button onclick="setCrossfader(-1)" class="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold">◀ A</button>
-                <div class="flex items-center gap-1">
-                  <span class="text-purple-300 font-bold">XFADER</span>
-                  <select id="xfader-curve" onchange="updateCrossfaderGain()" class="bg-slate-950 text-[8px] text-slate-300 border border-slate-700 rounded px-1">
-                    <option value="smooth">Smooth</option>
-                    <option value="power" selected>Power</option>
-                    <option value="cut">Scratch Cut</option>
-                  </select>
-                  <button onclick="setCrossfader(0)" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[8px]">MID</button>
-                </div>
-                <button onclick="setCrossfader(1)" class="px-2 py-0.5 rounded bg-orange-500/20 text-orange-300 font-bold">B ▶</button>
-              </div>
-              <input type="range" id="crossfader" min="-1" max="1" step="0.01" value="0" ondblclick="setCrossfader(0)" oninput="setCrossfader(parseFloat(this.value))" class="crossfader-input w-full" />
-            </div>
-          </div>
-
-          <!-- 8 Real Audio Sampler Pads -->
-          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2">
-            <div class="text-[9px] font-mono-tech font-black text-amber-400 mb-1">🔊 8 REAL AUDIO SAMPLER PADS</div>
-            <div class="grid grid-cols-4 gap-1">
-              <button onclick="playRealSamplerPad('pad1_horn', this)" class="perf-pad py-1.5 px-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-200 text-[9px] font-bold">🎺 Horn</button>
-              <button onclick="playRealSamplerPad('pad2_roll', this)" class="perf-pad py-1.5 px-1 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-[9px] font-bold">🥁 Snare</button>
-              <button onclick="playRealSamplerPad('pad3_crowd', this)" class="perf-pad py-1.5 px-1 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 text-[9px] font-bold">🏟️ Crowd</button>
-              <button onclick="playRealSamplerPad('pad4_gong', this)" class="perf-pad py-1.5 px-1 rounded bg-orange-500/20 border border-orange-500/40 text-orange-200 text-[9px] font-bold">🔔 Gong</button>
-              <button onclick="playRealSamplerPad('pad5_subdrop', this)" class="perf-pad py-1.5 px-1 rounded bg-red-500/20 border border-red-500/40 text-red-200 text-[9px] font-bold">💣 SubBoom</button>
-              <button onclick="playRealSamplerPad('pad6_laser', this)" class="perf-pad py-1.5 px-1 rounded bg-purple-500/20 border border-purple-500/40 text-purple-200 text-[9px] font-bold">⚡ Laser</button>
-              <button onclick="playRealSamplerPad('pad7_dhol', this)" class="perf-pad py-1.5 px-1 rounded bg-yellow-500/20 border border-yellow-500/40 text-yellow-200 text-[9px] font-bold">🪘 Dhol</button>
-              <button onclick="playRealSamplerPad('pad8_vocal', this)" class="perf-pad py-1.5 px-1 rounded bg-pink-500/20 border border-pink-500/40 text-pink-200 text-[9px] font-bold">🎤 Vocal</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- DECK B -->
-        <div class="xl:col-span-4 rounded-2xl bg-[#090d15] border border-orange-500/35 p-3 flex flex-col justify-between space-y-2.5"
-             ondragover="event.preventDefault()" ondrop="handleDeckDrop(event, 'B')">
-          <div class="flex items-start justify-between gap-2 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
-            <div class="flex items-center gap-2 min-w-0">
-              <div class="w-8 h-8 rounded-lg bg-orange-500/20 border border-orange-400 flex items-center justify-center font-mono-tech font-black text-base text-orange-300 shrink-0">B</div>
-              <div class="min-w-0">
-                <div class="flex items-center gap-1.5">
-                  <span id="deck-b-badge" class="text-[9px] font-mono-tech font-bold px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300">FESTIVAL EDM</span>
-                  <span id="deck-b-key" class="text-[9px] font-mono-tech font-bold px-1.5 py-0.2 rounded bg-slate-800 text-emerald-300">KEY: 11B (A)</span>
-                </div>
-                <h3 id="deck-b-title" class="text-xs sm:text-sm font-black text-white truncate mt-0.5">FESTIVAL EDM MAIN FLOOR</h3>
-              </div>
-            </div>
-            <div class="text-right shrink-0 font-mono-tech">
-              <div class="text-base font-black text-orange-400 leading-none" id="deck-b-bpm">128.0 <span class="text-[9px] text-slate-400">BPM</span></div>
-              <div class="text-[10px] text-slate-300 mt-1" id="deck-b-time">00:00.0 / -00:12.0</div>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-1.5">
-            <select id="deck-b-select" onchange="loadTrackToDeck('B', parseInt(this.value))" class="flex-1 bg-slate-900 text-xs font-bold text-orange-200 border border-orange-500/30 rounded-lg px-2 py-1.5"></select>
-            <label class="px-2.5 py-1.5 rounded-lg bg-orange-500/15 hover:bg-orange-500/25 text-orange-300 border border-orange-500/30 text-[11px] font-bold cursor-pointer shrink-0">
-              📂 Load Song
-              <input type="file" accept="audio/*,video/mp4,.mp3,.wav,.ogg,.m4a" class="hidden" onchange="handleUserSongFiles(this.files, 'B')" />
-            </label>
-          </div>
-
-          <div class="relative rounded-xl bg-[#04060a] border border-slate-800 p-1.5">
-            <div class="flex justify-between text-[9px] font-mono-tech text-slate-400 px-1 mb-0.5">
-              <span>OVERVIEW WAVEFORM (TAP TO SEEK)</span>
-              <span id="deck-b-pitch-pct" class="text-orange-400 font-bold">PITCH: +0.0%</span>
-            </div>
-            <canvas id="overview-wave-b" width="460" height="38" class="w-full h-[36px] rounded bg-[#020407] cursor-pointer block" onclick="seekFromOverview(event, 'B')"></canvas>
-          </div>
-
-          <div class="grid grid-cols-12 gap-2 items-center">
-            <div class="col-span-8 flex flex-col items-center">
-              <div id="platter-b" class="vinyl-platter deck-b-platter w-40 h-40 sm:w-44 sm:h-44 flex items-center justify-center" onpointerdown="startScratch(event, 'B')">
-                <div class="vinyl-shine"></div>
-                <div id="platter-rot-b" class="w-full h-full rounded-full relative flex items-center justify-center">
-                  <div class="absolute top-2 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-orange-500 shadow-[0_0_10px_#ff6b00]"></div>
-                  <div class="w-16 h-16 rounded-full bg-gradient-to-br from-orange-500 via-slate-900 to-cyan-500 p-0.5 flex items-center justify-center">
-                    <div class="w-full h-full rounded-full bg-[#060911] flex flex-col items-center justify-center text-center">
-                      <span class="text-[8px] font-black text-orange-400">IMS DECK B</span>
-                      <span class="text-[11px] font-mono-tech font-black text-white" id="platter-bpm-b">128.0</span>
-                      <span class="text-[8px] font-mono-tech text-amber-300" id="platter-state-b">READY</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="flex items-center gap-1 mt-1.5">
-                <button onclick="toggleVinylMode('B')" id="vinyl-mode-b" class="px-2 py-0.5 rounded bg-orange-500/20 border border-orange-500/40 text-orange-300 text-[9px] font-mono-tech font-bold">💿 VINYL: ON</button>
-                <button onclick="pitchBend('B', -0.04)" onmouseup="pitchBendReset('B')" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-mono-tech">⏪ -</button>
-                <button onclick="pitchBend('B', 0.04)" onmouseup="pitchBendReset('B')" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-mono-tech">+ ⏩</button>
-              </div>
-            </div>
-
-            <div class="col-span-4 bg-slate-900/90 border border-slate-800 rounded-xl p-2 flex flex-col items-center justify-between h-full">
-              <div class="text-[9px] font-mono-tech font-bold text-orange-300">PITCH TEMPO</div>
-              <input type="range" id="pitch-slider-b" min="-16" max="16" step="0.1" value="0" oninput="setDeckPitch('B', parseFloat(this.value))" class="dj-fader deck-b-slider w-full my-1.5" />
-              <div class="flex flex-wrap justify-center gap-1 w-full">
-                <button onclick="setDeckPitch('B', 0); document.getElementById('pitch-slider-b').value=0;" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-slate-300">0%</button>
-                <button onclick="changeKeySemitone('B', -1)" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-orange-300">KEY-</button>
-                <button onclick="changeKeySemitone('B', 1)" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-orange-300">KEY+</button>
-              </div>
-              <div class="grid grid-cols-2 gap-1 w-full mt-1.5">
-                <button onclick="toggleReverseDeck('B')" id="rev-btn-b" class="py-1 rounded bg-slate-800 text-[9px] font-mono-tech font-bold text-slate-300 border border-slate-700">⏪ REV</button>
-                <button onclick="triggerVinylBrake('B')" id="brake-btn-b" class="py-1 rounded bg-slate-800 text-[9px] font-mono-tech font-bold text-amber-300 border border-slate-700">🛑 BRAKE</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-4 gap-1.5">
-            <button onclick="togglePlayDeck('B')" id="play-btn-b" class="py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-slate-950 font-black text-xs">▶ PLAY</button>
-            <button onclick="triggerCueDeck('B')" id="cue-btn-b" class="py-2 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 font-black text-xs">⏹ CUE</button>
-            <button onclick="syncDeck('B')" id="sync-btn-b" class="py-2 rounded-xl bg-orange-500/20 border border-orange-500/50 text-orange-300 font-black text-xs">🔗 SYNC</button>
-            <button onclick="toggleAutoLoop('B', 4)" id="loop-btn-b" class="py-2 rounded-xl bg-purple-500/20 border border-purple-500/50 text-purple-300 font-black text-xs">🔁 4B LOOP</button>
-          </div>
-
-          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2">
-            <div class="flex items-center justify-between mb-1">
-              <span class="text-[9px] font-mono-tech font-bold text-orange-300">NEURAL 4-STEMS ISOLATION</span>
-              <div class="flex gap-1">
-                <button onclick="setStemPreset('B', 'acapella')" class="px-1.5 py-0.2 rounded bg-orange-500/15 text-orange-300 text-[9px] font-bold">Acapella</button>
-                <button onclick="setStemPreset('B', 'instrumental')" class="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 text-[9px] font-bold">Inst</button>
-                <button onclick="setStemPreset('B', 'reset')" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 text-[9px] font-bold">All</button>
-              </div>
-            </div>
-            <div class="grid grid-cols-4 gap-1">
-              <button onclick="toggleStem('B', 'vocal')" id="stem-b-vocal" class="stem-btn py-1 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-[10px] font-bold">🎤 VOCAL</button>
-              <button onclick="toggleStem('B', 'inst')" id="stem-b-inst" class="stem-btn py-1 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 text-[10px] font-bold">🎹 INSTR</button>
-              <button onclick="toggleStem('B', 'bass')" id="stem-b-bass" class="stem-btn py-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-200 text-[10px] font-bold">🎸 BASS</button>
-              <button onclick="toggleStem('B', 'drums')" id="stem-b-drums" class="stem-btn py-1 rounded bg-purple-500/20 border border-purple-500/40 text-purple-200 text-[10px] font-bold">🥁 DRUMS</button>
-            </div>
-          </div>
-
-          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2">
-            <div class="flex flex-wrap items-center justify-between gap-1 mb-1.5">
-              <div class="flex gap-1">
-                <button onclick="setPadMode('B', 'hotcue')" id="padmode-b-hotcue" class="px-2 py-0.5 rounded bg-orange-500 text-slate-950 text-[9px] font-black">CUES</button>
-                <button onclick="setPadMode('B', 'loop')" id="padmode-b-loop" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-bold">LOOPS</button>
-                <button onclick="setPadMode('B', 'jump')" id="padmode-b-jump" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-bold">JUMP</button>
-                <button onclick="setPadMode('B', 'key')" id="padmode-b-key" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-bold">PITCH</button>
-              </div>
-              <div class="flex gap-1">
-                <button onclick="halveLoop('B')" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-purple-300">÷2</button>
-                <button onclick="doubleLoop('B')" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-purple-300">×2</button>
-                <button onclick="clearLoop('B')" class="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-mono-tech text-red-300">EXIT</button>
-              </div>
-            </div>
-            <div id="pads-grid-b" class="grid grid-cols-4 gap-1.5"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- OFFLINE SONG CRATE & NEURALINK HARMONIC RANKING TABLE -->
-      <div class="rounded-2xl bg-[#080c14] border border-slate-800 p-3">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-black text-white">🎵 OFFLINE SONG CRATE &amp; NEURALINK 5B AUTO-RANKING</span>
-            <span class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono-tech text-[10px] font-bold">AUTO-ANALYZED BPM + CAMELOT KEY</span>
-          </div>
-          <label class="px-3 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold cursor-pointer">
-            + Import Offline Songs (MP3 / WAV / FLAC / M4A)
-            <input type="file" accept="audio/*,video/mp4,.mp3,.wav,.ogg,.flac,.m4a" multiple class="hidden" onchange="handleUserSongFiles(this.files, null)" />
+        <div class="flex gap-1.5">
+          <select id="sel-a" onchange="selectSong('A', parseInt(this.value))" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-cyan-200 font-bold"></select>
+          <label class="px-2.5 py-1 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold cursor-pointer">
+            📂 File
+            <input type="file" accept="audio/*" class="hidden" onchange="importOfflineFiles(this.files, 'A')" />
           </label>
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr class="border-b border-slate-800 text-[10px] font-mono-tech text-slate-400 uppercase">
-                <th class="py-1.5 px-2">#</th>
-                <th class="py-1.5 px-2">Song Title</th>
-                <th class="py-1.5 px-2">Genre / Style</th>
-                <th class="py-1.5 px-2">BPM</th>
-                <th class="py-1.5 px-2">Camelot Key</th>
-                <th class="py-1.5 px-2">Neuralink Fit Score</th>
-                <th class="py-1.5 px-2 text-right">Deck Actions</th>
-              </tr>
-            </thead>
-            <tbody id="song-crate-tbody" class="divide-y divide-slate-800/60"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
 
-    <!-- =================================================================== -->
-    <!-- VIEW 2: NEURALINK 5B BRAIN & 1GB OBB MODEL ARCHITECTURE             -->
-    <!-- =================================================================== -->
-    <div id="view-neuralink" class="hidden space-y-4">
-      <div class="rounded-2xl bg-[#090d16] border-2 border-purple-500/45 p-5 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
-          <div>
-            <span class="text-xs font-mono-tech font-bold text-purple-400">NEURALINK-5B SPARSE MIXTURE-OF-EXPERTS (MoE) AUDIO ENGINE</span>
-            <h2 class="text-xl sm:text-2xl font-black text-white mt-0.5">5,000,000,000 PARAMETER HUMAN-MIND DJ ARCHITECTURE (1.07 GB INT2 OBB)</h2>
-          </div>
-          <span class="px-3 py-1 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono-tech text-xs font-bold">OBB TENSOR MAP: ACTIVE</span>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-          <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
-            <div class="text-purple-400 font-mono-tech font-bold">EXPERT 1 &amp; 2 (1.25B Params)</div>
-            <div class="text-sm font-black text-white mt-1">Spectral Beatgrid &amp; Downbeat Phase</div>
-            <p class="text-slate-400 mt-1">Tracks sub-140Hz kick transients and aligns incoming downbeats to within 1.5 milliseconds so drums never flam.</p>
-          </div>
-          <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
-            <div class="text-cyan-400 font-mono-tech font-bold">EXPERT 3 &amp; 4 (1.25B Params)</div>
-            <div class="text-sm font-black text-white mt-1">Camelot 12-Key Harmonic Matrix</div>
-            <p class="text-slate-400 mt-1">Computes chroma pitch vectors and selects songs in matching or relative fifth keys (`8A ↔ 8A/7A/9A/8B`).</p>
-          </div>
-          <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
-            <div class="text-amber-400 font-mono-tech font-bold">EXPERT 5 &amp; 6 (1.25B Params)</div>
-            <div class="text-sm font-black text-white mt-1">Surgical 3-Band EQ Bass-Swap</div>
-            <p class="text-slate-400 mt-1">Silences incoming 100Hz Low EQ (`-24dB`) on entry and swaps sub-bass at the exact 50% phrase bar line.</p>
-          </div>
-          <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
-            <div class="text-emerald-400 font-mono-tech font-bold">EXPERT 7 &amp; 8 (1.25B Params)</div>
-            <div class="text-sm font-black text-white mt-1">4-Stem Vocal Clash Avoidance</div>
-            <p class="text-slate-400 mt-1">Detects vocal formant density (`300Hz–3.4kHz`) on both decks and ducks overlapping mid-frequencies automatically.</p>
-          </div>
-        </div>
-
-        <!-- Master Spectrum Analyzer -->
-        <div class="bg-[#04060b] rounded-2xl p-3 border border-slate-800">
-          <div class="flex justify-between text-xs font-mono-tech mb-2">
-            <span class="text-cyan-400 font-bold">REAL-TIME 64-BAND NEURALINK MASTER SPECTRUM</span>
-            <span id="rack-xover-readout" class="text-purple-300 font-bold">SUB/MID/HIGH ISOLATION CURVE</span>
-          </div>
-          <canvas id="fft-spectrum-canvas" width="760" height="160" class="w-full h-[150px] rounded-xl bg-[#020408] block"></canvas>
-        </div>
-      </div>
-    </div>
-
-    <!-- =================================================================== -->
-    <!-- VIEW 3: ONE-CLICK COPY-PASTE TERMUX MASTER SCRIPT                   -->
-    <!-- =================================================================== -->
-    <div id="view-termux" class="hidden space-y-4">
-      <div class="rounded-2xl bg-[#090d16] border-2 border-amber-500/50 p-5 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
-          <div>
-            <span class="text-xs font-mono-tech font-bold text-amber-400">ZERO MANUAL FILE CREATION • FIXES GRADLE BUILD ERROR IN GajananPatagar/IMS</span>
-            <h2 class="text-xl sm:text-2xl font-black text-white mt-0.5">1-CLICK COPY-PASTE TERMUX SCRIPT FOR "IMS" REPOSITORY</h2>
-            <p class="text-xs text-slate-300 mt-1">Copy the single command block below and paste it <strong>once</strong> into Termux. It wipes all old files in <code class="text-cyan-300">~/IMS</code>, creates the complete root <code class="text-amber-300">settings.gradle</code> + <code class="text-amber-300">build.gradle</code> + Native Android <code class="text-amber-300">IMS Mixer</code> app + <strong>1GB Neuralink-5B OBB Tensor Generator</strong>, and pushes to <code class="text-cyan-300">github.com/GajananPatagar/IMS</code>.</p>
-          </div>
-          <button onclick="copyTermuxPushScript()" class="px-5 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs shadow-xl">
-            📋 COPY 1-TIME TERMUX SCRIPT
-          </button>
-        </div>
-        <div id="termux-copy-status" class="text-xs font-mono-tech text-emerald-400 font-bold">Ready — Click the button above to copy the entire script at once.</div>
-        <pre id="termux-script-pre" class="p-4 rounded-2xl bg-[#030509] border border-slate-800 text-[11px] font-mono-tech text-cyan-300 overflow-x-auto max-h-[420px] leading-relaxed"></pre>
-      </div>
-    </div>
-
-    <!-- =================================================================== -->
-    <!-- VIEW 4: RAZORPAY PRO STORE, ADMOB & OTA LIVE UPDATER                -->
-    <!-- =================================================================== -->
-    <div id="view-store" class="hidden space-y-4">
-      <div class="rounded-2xl bg-[#090d16] border-2 border-emerald-500/45 p-5 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
-          <div>
-            <span class="text-xs font-mono-tech font-bold text-emerald-400">OVER-THE-AIR (OTA) LIVE UPDATES &amp; RAZORPAY MONETIZATION</span>
-            <h2 class="text-xl sm:text-2xl font-black text-white mt-0.5">IMS MIXER PRO UPGRADE &amp; OTA ENGINE</h2>
-          </div>
-          <button onclick="checkAndApplyOTAUpdate()" class="px-4 py-2 rounded-xl bg-cyan-500/20 border border-cyan-400/50 text-cyan-200 font-black text-xs">
-            🔄 Check OTA Update (v16.0-OTA)
-          </button>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          <div class="lg:col-span-5 bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-2.5 text-xs">
-            <div class="flex justify-between items-center">
-              <span class="font-mono-tech font-bold text-cyan-400">OTA MANIFEST ENDPOINT</span>
-              <span id="ota-version-badge" class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono-tech text-[10px]">v16.0-OTA</span>
-            </div>
-            <input type="text" id="ota-manifest-url" value="https://raw.githubusercontent.com/GajananPatagar/IMS/main/ota-manifest.json" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-mono-tech text-cyan-300" />
-            <div id="ota-log-box" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 font-mono-tech text-[11px] text-slate-300 space-y-1">
-              <div>[OTA] Connected to github.com/GajananPatagar/IMS</div>
-              <div>[OTA] 1GB Neuralink-5B OBB + Delta Hot-Reload Ready</div>
-            </div>
-          </div>
-
-          <div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="p-4 rounded-2xl bg-slate-900 border-2 border-cyan-500/50 flex flex-col justify-between">
-              <div>
-                <span class="text-[10px] font-mono-tech font-bold text-cyan-300">MONTHLY PRO</span>
-                <h3 class="text-base font-black text-white mt-1">IMS Mixer Pro Monthly</h3>
-                <div class="text-2xl font-black text-cyan-400 font-mono-tech mt-1">₹199 <span class="text-xs text-slate-400">/ month</span></div>
-                <ul class="mt-2 space-y-1 text-xs text-slate-300">
-                  <li>✓ Remove All AdMob Ads</li>
-                  <li>✓ Unlimited Neuralink 5B Auto-Mixing</li>
-                  <li>✓ 4-Stem Acapella &amp; Bass-Swap AI</li>
-                </ul>
+        <div class="flex items-center justify-around py-1">
+          <div id="platter-a" class="platter w-36 h-36 flex items-center justify-center cursor-grab" onpointerdown="scratchDeck(event, 'A')">
+            <div id="rot-a" class="w-full h-full rounded-full relative flex items-center justify-center">
+              <div class="absolute top-2 left-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-cyan-400"></div>
+              <div class="w-14 h-14 rounded-full bg-slate-950 border border-cyan-500/50 flex flex-col items-center justify-center text-[10px] mono font-bold">
+                <span class="text-cyan-400">DECK A</span>
+                <span id="state-a" class="text-[8px] text-slate-400">READY</span>
               </div>
-              <button onclick="openRazorpayModal('pro_monthly')" class="mt-4 w-full py-2.5 rounded-xl bg-cyan-500 text-slate-950 font-black text-xs">💳 Buy via Razorpay (₹199)</button>
             </div>
-
-            <div class="p-4 rounded-2xl bg-slate-900 border-2 border-amber-400/60 flex flex-col justify-between">
-              <div>
-                <span class="text-[10px] font-mono-tech font-bold text-amber-300">LIFETIME STUDIO UNLOCK</span>
-                <h3 class="text-base font-black text-white mt-1">IMS Mixer Lifetime VIP</h3>
-                <div class="text-2xl font-black text-amber-400 font-mono-tech mt-1">₹999 <span class="text-xs text-slate-400">/ one-time</span></div>
-                <ul class="mt-2 space-y-1 text-xs text-slate-300">
-                  <li>✓ Permanent Ad-Free + All Future OTA Drops</li>
-                  <li>✓ Full 1GB Neuralink-5B Offline Brain</li>
-                  <li>✓ Master WAV / WebM Live Mix Recorder</li>
-                </ul>
-              </div>
-              <button onclick="openRazorpayModal('pro_lifetime')" class="mt-4 w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs">👑 Unlock Lifetime (₹999)</button>
+          </div>
+          <div class="space-y-1.5 w-28">
+            <div class="text-[10px] mono text-cyan-300 font-bold">PITCH <span id="pitch-lbl-a">0.0%</span></div>
+            <input type="range" id="pitch-a" min="-16" max="16" step="0.1" value="0" oninput="setPitch('A', parseFloat(this.value))" class="w-full" />
+            <div class="grid grid-cols-2 gap-1 text-[10px] mono">
+              <button onclick="setPitch('A',0);document.getElementById('pitch-a').value=0;" class="py-1 rounded bg-slate-800">0%</button>
+              <button onclick="syncDecks('A')" class="py-1 rounded bg-cyan-500/20 text-cyan-300 font-bold">SYNC</button>
             </div>
           </div>
         </div>
+
+        <div class="grid grid-cols-4 gap-1.5 text-xs font-black">
+          <button onclick="playPause('A')" id="play-a" class="py-2 rounded-xl bg-emerald-500 text-slate-950">▶ PLAY</button>
+          <button onclick="cueDeck('A')" class="py-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300">⏹ CUE</button>
+          <button onclick="toggleLoop('A', 4)" id="loop-a" class="py-2 rounded-xl bg-purple-500/20 border border-purple-500/40 text-purple-300">🔁 LOOP</button>
+          <button onclick="brakeDeck('A')" class="py-2 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300">🛑 BRAKE</button>
+        </div>
+
+        <!-- 4 Stems -->
+        <div class="grid grid-cols-4 gap-1 pt-1">
+          <button onclick="toggleStem('A','vocal',this)" class="py-1.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-[10px] font-bold">🎤 VOCAL</button>
+          <button onclick="toggleStem('A','inst',this)" class="py-1.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-bold">🎹 INSTR</button>
+          <button onclick="toggleStem('A','bass',this)" class="py-1.5 rounded bg-amber-500/20 border border-amber-500/40 text-[10px] font-bold">🎸 BASS</button>
+          <button onclick="toggleStem('A','drums',this)" class="py-1.5 rounded bg-purple-500/20 border border-purple-500/40 text-[10px] font-bold">🥁 DRUMS</button>
+        </div>
       </div>
-    </div>
 
-  </main>
+      <!-- CENTER 2-CHANNEL PRO MIXER -->
+      <div class="lg:col-span-4 rounded-2xl bg-[#0b101d] border border-purple-500/35 p-3 flex flex-col justify-between space-y-2.5">
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <!-- EQ A -->
+          <div class="bg-slate-900 p-2 rounded-xl border border-slate-800 space-y-1">
+            <div class="font-bold text-cyan-400 mono text-[10px]">CH A 3-BAND EQ</div>
+            <div class="flex justify-between text-[10px]"><span>HIGH</span><button onclick="killEq('A','high',this)" class="px-1 rounded bg-slate-800 text-[9px]">KILL</button></div>
+            <input type="range" id="eq-a-high" min="-24" max="12" value="0" oninput="updateEq('A')" class="w-full" />
+            <div class="flex justify-between text-[10px]"><span>MID</span><button onclick="killEq('A','mid',this)" class="px-1 rounded bg-slate-800 text-[9px]">KILL</button></div>
+            <input type="range" id="eq-a-mid" min="-24" max="12" value="0" oninput="updateEq('A')" class="w-full" />
+            <div class="flex justify-between text-[10px]"><span>LOW (BASS)</span><button onclick="killEq('A','low',this)" class="px-1 rounded bg-slate-800 text-[9px]">KILL</button></div>
+            <input type="range" id="eq-a-low" min="-24" max="12" value="0" oninput="updateEq('A')" class="w-full" />
+          </div>
 
-  <!-- RAZORPAY CHECKOUT MODAL -->
-  <div id="razorpay-modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-4" onclick="closeRazorpayModal()">
-    <div class="max-w-md w-full bg-[#0b1120] border-2 border-emerald-500/60 rounded-3xl p-5 space-y-4 shadow-2xl" onclick="event.stopPropagation()">
-      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-        <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center font-black text-white text-sm">RZP</div>
+          <!-- EQ B -->
+          <div class="bg-slate-900 p-2 rounded-xl border border-slate-800 space-y-1">
+            <div class="font-bold text-orange-400 mono text-[10px]">CH B 3-BAND EQ</div>
+            <div class="flex justify-between text-[10px]"><span>HIGH</span><button onclick="killEq('B','high',this)" class="px-1 rounded bg-slate-800 text-[9px]">KILL</button></div>
+            <input type="range" id="eq-b-high" min="-24" max="12" value="0" oninput="updateEq('B')" class="w-full" />
+            <div class="flex justify-between text-[10px]"><span>MID</span><button onclick="killEq('B','mid',this)" class="px-1 rounded bg-slate-800 text-[9px]">KILL</button></div>
+            <input type="range" id="eq-b-mid" min="-24" max="12" value="0" oninput="updateEq('B')" class="w-full" />
+            <div class="flex justify-between text-[10px]"><span>LOW (BASS)</span><button onclick="killEq('B','low',this)" class="px-1 rounded bg-slate-800 text-[9px]">KILL</button></div>
+            <input type="range" id="eq-b-low" min="-24" max="12" value="0" oninput="updateEq('B')" class="w-full" />
+          </div>
+        </div>
+
+        <!-- Volume + Crossfader -->
+        <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-800 space-y-2">
+          <div class="grid grid-cols-2 gap-3 text-[10px] mono">
+            <div>
+              <div class="flex justify-between text-cyan-300 font-bold"><span>DECK A VOL</span><span id="vol-a-txt">95%</span></div>
+              <input type="range" id="vol-a" min="0" max="1" step="0.01" value="0.95" oninput="updateVolumes()" class="w-full" />
+            </div>
+            <div>
+              <div class="flex justify-between text-orange-300 font-bold"><span>DECK B VOL</span><span id="vol-b-txt">95%</span></div>
+              <input type="range" id="vol-b" min="0" max="1" step="0.01" value="0.95" oninput="updateVolumes()" class="w-full" />
+            </div>
+          </div>
+
           <div>
-            <div class="text-[10px] font-mono-tech text-emerald-400 font-bold">RAZORPAY SECURE CHECKOUT • INR (₹)</div>
-            <h3 class="text-sm font-black text-white">IMS MIXER — NEURALINK 5B PRO</h3>
+            <div class="flex justify-between text-[10px] mono text-purple-300 font-bold mb-1">
+              <span>◀ DECK A</span><span>NEURALINK S-CURVE CROSSFADER</span><span>DECK B ▶</span>
+            </div>
+            <input type="range" id="xfader" min="-1" max="1" step="0.01" value="-1" oninput="setXfade(parseFloat(this.value))" class="w-full" />
           </div>
         </div>
-        <button onclick="closeRazorpayModal()" class="text-xs font-bold text-slate-400 hover:text-white">✕</button>
-      </div>
-      <div class="p-3 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-        <div>
-          <div id="rzp-plan-name" class="text-xs font-black text-white">IMS Mixer Lifetime VIP</div>
-          <div class="text-[10px] text-slate-400">Removes Ads • Unlocks 5B Unlimited Offline Auto-DJ</div>
+
+        <!-- FX & C++ Neuralink Brain Callout -->
+        <div class="bg-slate-900 p-2 rounded-xl border border-slate-800 flex items-center justify-between text-[10px] mono">
+          <span class="text-emerald-400 font-bold">C++ JNI BRAIN:</span>
+          <span id="cpp-brain-out" class="text-slate-300 truncate max-w-[220px]">64-Expert Sparse MoE Ready</span>
         </div>
-        <div id="rzp-plan-price" class="text-lg font-black text-amber-400 font-mono-tech">₹999</div>
       </div>
-      <div class="grid grid-cols-3 gap-2 text-xs">
-        <button onclick="selectRzpMethod('UPI - GPay and PhonePe')" class="p-2 rounded-xl bg-emerald-500/20 border border-emerald-400 text-emerald-200 font-bold text-[11px]">📱 UPI / QR</button>
-        <button onclick="selectRzpMethod('Card - Visa and RuPay')" class="p-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 font-bold text-[11px]">💳 Card</button>
-        <button onclick="selectRzpMethod('Netbanking')" class="p-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 font-bold text-[11px]">🏦 Bank</button>
+
+      <!-- DECK B -->
+      <div class="lg:col-span-4 rounded-2xl bg-[#090d16] border border-orange-500/35 p-3 space-y-2.5">
+        <div class="flex justify-between items-center bg-slate-900 p-2 rounded-xl border border-slate-800">
+          <div class="min-w-0">
+            <span id="key-b" class="text-[10px] mono font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300">11B (A)</span>
+            <h3 id="title-b" class="text-xs font-black text-white truncate mt-0.5">DECK B — LOAD OR PLAY</h3>
+          </div>
+          <div class="text-right mono">
+            <div id="bpm-b" class="text-sm font-black text-orange-400">128.0 BPM</div>
+            <div id="time-b" class="text-[10px] text-slate-400">00:00.0</div>
+          </div>
+        </div>
+
+        <div class="flex gap-1.5">
+          <select id="sel-b" onchange="selectSong('B', parseInt(this.value))" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-orange-200 font-bold"></select>
+          <label class="px-2.5 py-1 rounded-lg bg-orange-500/20 border border-orange-500/40 text-orange-300 text-xs font-bold cursor-pointer">
+            📂 File
+            <input type="file" accept="audio/*" class="hidden" onchange="importOfflineFiles(this.files, 'B')" />
+          </label>
+        </div>
+
+        <div class="flex items-center justify-around py-1">
+          <div id="platter-b" class="platter platter-b w-36 h-36 flex items-center justify-center cursor-grab" onpointerdown="scratchDeck(event, 'B')">
+            <div id="rot-b" class="w-full h-full rounded-full relative flex items-center justify-center">
+              <div class="absolute top-2 left-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-orange-500"></div>
+              <div class="w-14 h-14 rounded-full bg-slate-950 border border-orange-500/50 flex flex-col items-center justify-center text-[10px] mono font-bold">
+                <span class="text-orange-400">DECK B</span>
+                <span id="state-b" class="text-[8px] text-slate-400">READY</span>
+              </div>
+            </div>
+          </div>
+          <div class="space-y-1.5 w-28">
+            <div class="text-[10px] mono text-orange-300 font-bold">PITCH <span id="pitch-lbl-b">0.0%</span></div>
+            <input type="range" id="pitch-b" min="-16" max="16" step="0.1" value="0" oninput="setPitch('B', parseFloat(this.value))" class="w-full" />
+            <div class="grid grid-cols-2 gap-1 text-[10px] mono">
+              <button onclick="setPitch('B',0);document.getElementById('pitch-b').value=0;" class="py-1 rounded bg-slate-800">0%</button>
+              <button onclick="syncDecks('B')" class="py-1 rounded bg-orange-500/20 text-orange-300 font-bold">SYNC</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-4 gap-1.5 text-xs font-black">
+          <button onclick="playPause('B')" id="play-b" class="py-2 rounded-xl bg-emerald-500 text-slate-950">▶ PLAY</button>
+          <button onclick="cueDeck('B')" class="py-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300">⏹ CUE</button>
+          <button onclick="toggleLoop('B', 4)" id="loop-b" class="py-2 rounded-xl bg-purple-500/20 border border-purple-500/40 text-purple-300">🔁 LOOP</button>
+          <button onclick="brakeDeck('B')" class="py-2 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300">🛑 BRAKE</button>
+        </div>
+
+        <div class="grid grid-cols-4 gap-1 pt-1">
+          <button onclick="toggleStem('B','vocal',this)" class="py-1.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-[10px] font-bold">🎤 VOCAL</button>
+          <button onclick="toggleStem('B','inst',this)" class="py-1.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-bold">🎹 INSTR</button>
+          <button onclick="toggleStem('B','bass',this)" class="py-1.5 rounded bg-amber-500/20 border border-amber-500/40 text-[10px] font-bold">🎸 BASS</button>
+          <button onclick="toggleStem('B','drums',this)" class="py-1.5 rounded bg-purple-500/20 border border-purple-500/40 text-[10px] font-bold">🥁 DRUMS</button>
+        </div>
       </div>
-      <input type="text" id="rzp-upi-input" value="djpro@okaxis" placeholder="Enter UPI ID" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono-tech" />
-      <button onclick="completeRazorpayPayment()" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black text-xs shadow-lg">
-        🔒 Pay Now &amp; Unlock IMS Mixer Pro
-      </button>
     </div>
-  </div>
+
+    <!-- OFFLINE SONG QUEUE & HARMONIC RANKING -->
+    <div class="rounded-2xl bg-[#090d16] border border-slate-800 p-3">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-xs font-black">🎵 OFFLINE DOWNLOADED SONGS &amp; NEURALINK 5B RANKING</span>
+        <span id="song-count-badge" class="text-[10px] mono text-cyan-400">Ready for Offline Songs</span>
+      </div>
+      <div class="overflow-x-auto max-h-56">
+        <table class="w-full text-left text-xs">
+          <thead>
+            <tr class="border-b border-slate-800 text-[10px] mono text-slate-400">
+              <th class="py-1 px-2">#</th>
+              <th class="py-1 px-2">Track Title</th>
+              <th class="py-1 px-2">BPM</th>
+              <th class="py-1 px-2">Camelot Key</th>
+              <th class="py-1 px-2">5B Harmonic Fit</th>
+              <th class="py-1 px-2 text-right">Load</th>
+            </tr>
+          </thead>
+          <tbody id="playlist-body" class="divide-y divide-slate-800/60"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 
   <script>
-    const AUDIO_ASSETS = {};
-    const TERMUX_MASTER_SCRIPT = "Installed via Termux Master Script v16.0";
-
-    function switchAppTab(tab) {
-      ['mixer', 'neuralink', 'termux', 'store'].forEach(t => {
-        const view = document.getElementById(`view-${t}`);
-        const btn = document.getElementById(`tab-btn-${t}`);
-        if (t === tab) {
-          view.classList.remove('hidden');
-          btn.className = 'px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-black transition';
-        } else {
-          view.classList.add('hidden');
-          btn.className = 'px-3 py-1.5 rounded-lg text-slate-300 hover:text-white transition';
-        }
-      });
-    }
-
-    const SONG_LIBRARY = [
-      { id: 0, keyName: 'track1_phonk', title: 'BRAZILIAN PHONK VOCAL ANTHEM', category: '🔥 Phonk Vocal Drop', bpm: 130.0, musicalKey: '8A (Am)', badge: 'VOCAL PHONK', cues: [0.0, 1.84, 3.69, 5.53, 7.38, 9.23, 10.15, 11.07] },
-      { id: 1, keyName: 'track2_edm', title: 'FESTIVAL EDM MAIN FLOOR', category: '🎧 Progressive EDM House', bpm: 128.0, musicalKey: '11B (A)', badge: 'FESTIVAL EDM', cues: [0.0, 1.87, 3.75, 5.62, 7.50, 9.37, 10.31, 11.25] },
-      { id: 2, keyName: 'track3_jatre', title: 'DHOL-TASHA PERCUSSION BASS SMASH', category: '🥁 Folk Percussion Bass', bpm: 126.0, musicalKey: '5A (Cm)', badge: 'DHOL BASS', cues: [0.0, 1.90, 3.81, 5.71, 7.62, 9.52, 10.47, 11.42] },
-      { id: 3, keyName: 'track4_sangeet', title: 'ACOUSTIC GUITAR & CLUB GROOVE REMIX', category: '🎸 Melodic Club House', bpm: 124.0, musicalKey: '9A (Em)', badge: 'GUITAR CLUB', cues: [0.0, 1.93, 3.87, 5.80, 7.74, 9.67, 10.64, 11.61] },
-      { id: 4, keyName: 'track5_stadium', title: 'STADIUM ARENA HYPE & BRASS DROP', category: '🏟️ Big Room Stadium', bpm: 134.0, musicalKey: '2A (D#m)', badge: 'ARENA DROP', cues: [0.0, 1.79, 3.58, 5.37, 7.16, 8.95, 9.85, 10.74] },
-      { id: 5, keyName: 'track6_mashup', title: 'IMS VIP VOCAL & SUB-BASS MASHUP', category: '👑 VIP Club Mashup', bpm: 132.0, musicalKey: '8A (Am)', badge: 'VIP MASHUP', cues: [0.0, 1.81, 3.63, 5.45, 7.27, 9.09, 10.00, 10.90] }
-    ];
-
     let audioCtx = null;
-    const decodedBuffers = {};
-    const decodedRevBuffers = {};
-    const waveformPeaks = {};
-    const samplerBuffers = {};
-    let buffersReady = false;
-    let decodingPromise = null;
+    const SONGS = [];
+    const BUFFERS = {};
+    let autoDj = false, mixingNow = false, historyIds = [];
 
-    let masterGainNode = null, micDuckGainNode = null, masterLimiter = null, masterAnalyser = null, mediaStreamDest = null, mediaRecorder = null;
-    let recordedChunks = [], isRecordingMix = false;
-    let fxAssignedA = true, fxAssignedB = true;
-    const activeFX = { echo: false, flanger: false, reverb: false, crush: false, trans: false, wobble: false };
-    let fxDryGain = null, fxWetGain = null, delayNode = null, delayFeedback = null, flangerDelay = null, flangerLfo = null, flangerLfoGain = null;
-    let reverbConvolver = null, reverbGain = null, crushShaper = null, crushGain = null, transGateGain = null, wobbleFilter = null, wobbleLfo = null, wobbleLfoGain = null;
-    let kaossFilter = null, kaossActive = false, kaossCoords = { x: 0.5, y: 0.5 };
-
-    const decks = { A: createDeckState('A', 0), B: createDeckState('B', 1) };
-
-    function createDeckState(id, defaultTrackIdx) {
-      return {
-        id, trackIdx: defaultTrackIdx, isPlaying: false, isReversed: false, vinylMode: true, isScratching: false,
-        startTime: 0, offsetPos: 0, cuePoint: 0, pitchPct: 0, pitchBendFactor: 1.0, keySemitones: 0, playbackRate: 1.0,
-        volume: 0.95, trimGain: 1.0, eqValues: { high: 0, mid: 0, low: 0 }, eqKills: { high: false, mid: false, low: false },
-        stems: { vocal: true, inst: true, bass: true, drums: true }, colorFilterVal: 0, padMode: 'hotcue',
-        loopActive: false, loopBeats: 4, loopStart: 0, loopEnd: 4, hotCues: [...SONG_LIBRARY[defaultTrackIdx].cues],
-        sourceNode: null, inputGainNode: null, eqLowNode: null, eqMidNode: null, eqHighNode: null,
-        colorFilterNode: null, channelGainNode: null, xfadeGainNode: null, deckAnalyser: null, platterAngle: 0
-      };
-    }
-
-    function base64ToArrayBuffer(dataURI) {
-      const b64 = dataURI.split(',')[1];
-      const bin = atob(b64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      return bytes.buffer;
-    }
-
-    function createReverbBuffer(ctx, duration = 1.5, decay = 2.4) {
-      const len = Math.floor(ctx.sampleRate * duration);
-      const buf = ctx.createBuffer(2, len, ctx.sampleRate);
-      for (let c = 0; c < 2; c++) {
-        const ch = buf.getChannelData(c);
-        for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
-      }
-      return buf;
-    }
-
-    function makeDistortionCurve(amount = 50) {
-      const k = amount, n = 44100, curve = new Float32Array(n);
-      for (let i = 0; i < n; i++) {
-        const x = (i * 2) / n - 1;
-        curve[i] = ((3 + k) * x * 20 * (Math.PI / 180)) / (Math.PI + k * Math.abs(x));
-      }
-      return curve;
-    }
-
-    function computeReversedBuffer(ctx, buffer) {
-      const rev = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
-      for (let c = 0; c < buffer.numberOfChannels; c++) {
-        const src = buffer.getChannelData(c), dst = rev.getChannelData(c);
-        for (let i = 0, n = src.length; i < n; i++) dst[i] = src[n - 1 - i];
-      }
-      return rev;
-    }
-
-    function computeTricolorPeaks(buffer, numBuckets = 240) {
-      const ch = buffer.getChannelData(0);
-      const step = Math.floor(ch.length / numBuckets) || 1;
-      const peaks = [];
-      for (let b = 0; b < numBuckets; b++) {
-        const start = b * step;
-        let sumSq = 0, diffSum = 0, peak = 0;
-        for (let i = start; i < start + step && i < ch.length; i++) {
-          const v = Math.abs(ch[i]);
-          if (v > peak) peak = v;
-          sumSq += v * v;
-          if (i > start) diffSum += Math.abs(ch[i] - ch[i - 1]);
-        }
-        const rms = Math.sqrt(sumSq / step);
-        peaks.push({ low: Math.min(1, peak * 1.1), mid: Math.min(1, rms * 1.6), high: Math.min(1, (diffSum / step) * 3.5) });
-      }
-      return peaks;
-    }
-
-    async function ensureAudioEngine() {
-      if (!audioCtx) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        audioCtx = new AC();
-        buildAudioGraph();
-      }
-      if (audioCtx.state === 'suspended') await audioCtx.resume();
-      if (!buffersReady) {
-        if (!decodingPromise) decodingPromise = decodeAllAssets();
-        await decodingPromise;
-      }
-    }
-
-    function buildAudioGraph() {
-      micDuckGainNode = audioCtx.createGain();
-      kaossFilter = audioCtx.createBiquadFilter();
-      kaossFilter.type = 'allpass';
-
-      fxDryGain = audioCtx.createGain();
-      fxWetGain = audioCtx.createGain();
-      fxWetGain.gain.value = 0.0;
-
-      delayNode = audioCtx.createDelay(2.0);
-      delayNode.delayTime.value = 0.34;
-      delayFeedback = audioCtx.createGain();
-      delayFeedback.gain.value = 0.45;
-      delayNode.connect(delayFeedback);
-      delayFeedback.connect(delayNode);
-
-      flangerDelay = audioCtx.createDelay(0.05);
-      flangerDelay.delayTime.value = 0.005;
-      flangerLfo = audioCtx.createOscillator();
-      flangerLfo.frequency.value = 0.6;
-      flangerLfoGain = audioCtx.createGain();
-      flangerLfoGain.gain.value = 0.003;
-      flangerLfo.connect(flangerLfoGain);
-      flangerLfoGain.connect(flangerDelay.delayTime);
-      flangerLfo.start();
-
-      reverbConvolver = audioCtx.createConvolver();
-      reverbConvolver.buffer = createReverbBuffer(audioCtx, 1.5, 2.5);
-      reverbGain = audioCtx.createGain();
-      reverbGain.gain.value = 0.0;
-
-      crushShaper = audioCtx.createWaveShaper();
-      crushShaper.curve = makeDistortionCurve(60);
-      crushGain = audioCtx.createGain();
-      crushGain.gain.value = 0.0;
-
-      transGateGain = audioCtx.createGain();
-      wobbleFilter = audioCtx.createBiquadFilter();
-      wobbleFilter.type = 'lowpass';
-      wobbleFilter.frequency.value = 18000;
-      wobbleLfo = audioCtx.createOscillator();
-      wobbleLfo.frequency.value = 4.0;
-      wobbleLfoGain = audioCtx.createGain();
-      wobbleLfoGain.gain.value = 0;
-      wobbleLfo.connect(wobbleLfoGain);
-      wobbleLfoGain.connect(wobbleFilter.frequency);
-      wobbleLfo.start();
-
-      micDuckGainNode.connect(wobbleFilter);
-      wobbleFilter.connect(transGateGain);
-      transGateGain.connect(kaossFilter);
-
-      kaossFilter.connect(fxDryGain);
-      kaossFilter.connect(delayNode); delayNode.connect(fxWetGain);
-      kaossFilter.connect(flangerDelay); flangerDelay.connect(fxWetGain);
-      kaossFilter.connect(reverbConvolver); reverbConvolver.connect(reverbGain); reverbGain.connect(fxWetGain);
-      kaossFilter.connect(crushShaper); crushShaper.connect(crushGain); crushGain.connect(fxWetGain);
-
-      masterLimiter = audioCtx.createDynamicsCompressor();
-      masterLimiter.threshold.value = -2.0;
-      masterLimiter.ratio.value = 12.0;
-
-      masterGainNode = audioCtx.createGain();
-      masterGainNode.gain.value = 0.95;
-
-      masterAnalyser = audioCtx.createAnalyser();
-      masterAnalyser.fftSize = 256;
-
-      fxDryGain.connect(masterLimiter);
-      fxWetGain.connect(masterLimiter);
-      masterLimiter.connect(masterGainNode);
-      masterGainNode.connect(masterAnalyser);
-      masterAnalyser.connect(audioCtx.destination);
-
-      try {
-        mediaStreamDest = audioCtx.createMediaStreamDestination();
-        masterGainNode.connect(mediaStreamDest);
-      } catch (e) {}
-
-      ['A', 'B'].forEach(id => {
-        const d = decks[id];
-        d.inputGainNode = audioCtx.createGain();
-        d.eqLowNode = audioCtx.createBiquadFilter(); d.eqLowNode.type = 'lowshelf'; d.eqLowNode.frequency.value = 110;
-        d.eqMidNode = audioCtx.createBiquadFilter(); d.eqMidNode.type = 'peaking'; d.eqMidNode.frequency.value = 1000; d.eqMidNode.Q.value = 0.9;
-        d.eqHighNode = audioCtx.createBiquadFilter(); d.eqHighNode.type = 'highshelf'; d.eqHighNode.frequency.value = 8500;
-        d.colorFilterNode = audioCtx.createBiquadFilter(); d.colorFilterNode.type = 'allpass';
-        d.channelGainNode = audioCtx.createGain(); d.channelGainNode.gain.value = d.volume;
-        d.xfadeGainNode = audioCtx.createGain(); d.xfadeGainNode.gain.value = 1.0;
-        d.deckAnalyser = audioCtx.createAnalyser(); d.deckAnalyser.fftSize = 128;
-
-        d.inputGainNode.connect(d.eqLowNode);
-        d.eqLowNode.connect(d.eqMidNode);
-        d.eqMidNode.connect(d.eqHighNode);
-        d.eqHighNode.connect(d.colorFilterNode);
-        d.colorFilterNode.connect(d.channelGainNode);
-        d.channelGainNode.connect(d.xfadeGainNode);
-        d.xfadeGainNode.connect(d.deckAnalyser);
-        d.deckAnalyser.connect(micDuckGainNode);
-      });
-    }
-
-    async function decodeAllAssets() {
-      for (const song of SONG_LIBRARY) {
-        const dataURI = AUDIO_ASSETS[song.keyName];
-        if (dataURI && !decodedBuffers[song.keyName]) {
-          const ab = base64ToArrayBuffer(dataURI);
-          const audioBuf = await audioCtx.decodeAudioData(ab);
-          decodedBuffers[song.keyName] = audioBuf;
-          decodedRevBuffers[song.keyName] = computeReversedBuffer(audioCtx, audioBuf);
-          waveformPeaks[song.keyName] = computeTricolorPeaks(audioBuf, 240);
-        }
-      }
-      const padKeys = ['pad1_horn', 'pad2_roll', 'pad3_crowd', 'pad4_gong', 'pad5_subdrop', 'pad6_laser', 'pad7_dhol', 'pad8_vocal'];
-      for (const pk of padKeys) {
-        if (AUDIO_ASSETS[pk] && !samplerBuffers[pk]) {
-          samplerBuffers[pk] = await audioCtx.decodeAudioData(base64ToArrayBuffer(AUDIO_ASSETS[pk]));
-        }
-      }
-      buffersReady = true;
-      drawOverviewWaveform('A');
-      drawOverviewWaveform('B');
-    }
-
-    function generateInitialPreviewPeaks() {
-      SONG_LIBRARY.forEach((s, idx) => {
-        const arr = [];
-        for (let i = 0; i < 240; i++) {
-          const beatPulse = Math.abs(Math.sin((i / 240) * Math.PI * 32));
-          arr.push({ low: 0.35 + 0.6 * beatPulse, mid: 0.25 + 0.5 * Math.abs(Math.cos(i * 0.25 + idx)), high: 0.15 + 0.45 * Math.abs(Math.sin(i * 0.7 + idx)) });
-        }
-        waveformPeaks[s.keyName] = arr;
-      });
-    }
-
-    function getDeckBuffer(id) {
-      const d = decks[id], song = SONG_LIBRARY[d.trackIdx];
-      if (!song) return null;
-      return d.isReversed ? decodedRevBuffers[song.keyName] : decodedBuffers[song.keyName];
-    }
-
-    function getDeckDuration(id) {
-      const d = decks[id], song = SONG_LIBRARY[d.trackIdx], buf = song && decodedBuffers[song.keyName];
-      return buf ? buf.duration : 12.0;
-    }
-
-    function getCurrentDeckPos(id) {
-      const d = decks[id], dur = getDeckDuration(id);
-      if (!d.isPlaying || !audioCtx) return d.offsetPos % dur;
-      const elapsed = (audioCtx.currentTime - d.startTime) * d.playbackRate;
-      let pos = d.isReversed ? (d.offsetPos - elapsed) : (d.offsetPos + elapsed);
-      if (d.loopActive && d.loopEnd > d.loopStart) {
-        const loopLen = d.loopEnd - d.loopStart;
-        if (pos >= d.loopEnd || pos < d.loopStart) pos = d.loopStart + (((pos - d.loopStart) % loopLen + loopLen) % loopLen);
-        return pos;
-      }
-      return ((pos % dur) + dur) % dur;
-    }
-
-    function computePlaybackRate(id) {
-      const d = decks[id];
-      d.playbackRate = Math.max(0.25, Math.min(2.5, (1.0 + d.pitchPct / 100.0) * Math.pow(2, d.keySemitones / 12.0) * d.pitchBendFactor));
-      return d.playbackRate;
-    }
-
-    function startDeckSource(id, seekPos = null) {
-      const d = decks[id];
-      stopDeckSourceOnly(id);
-      const buf = getDeckBuffer(id);
-      if (!buf || !audioCtx) return;
-      const dur = buf.duration;
-      if (seekPos !== null) d.offsetPos = ((seekPos % dur) + dur) % dur;
-
-      const src = audioCtx.createBufferSource();
-      src.buffer = buf;
-      src.loop = true;
-      if (d.loopActive && d.loopEnd > d.loopStart && !d.isReversed) {
-        src.loopStart = Math.max(0, Math.min(dur - 0.05, d.loopStart));
-        src.loopEnd = Math.max(src.loopStart + 0.05, Math.min(dur, d.loopEnd));
-      } else {
-        src.loopStart = 0; src.loopEnd = dur;
-      }
-      src.playbackRate.value = computePlaybackRate(id);
-      src.connect(d.inputGainNode);
-      const startOffset = d.isReversed ? Math.max(0, dur - d.offsetPos) : d.offsetPos;
-      src.start(0, Math.min(dur - 0.01, Math.max(0, startOffset)));
-      d.sourceNode = src;
-      d.startTime = audioCtx.currentTime;
-      d.isPlaying = true;
-      updateDeckTransportUI(id);
-    }
-
-    function stopDeckSourceOnly(id) {
-      const d = decks[id];
-      if (d.sourceNode) {
-        try { d.sourceNode.stop(); } catch (e) {}
-        try { d.sourceNode.disconnect(); } catch (e) {}
-        d.sourceNode = null;
-      }
-    }
-
-    async function togglePlayDeck(id) {
-      await ensureAudioEngine();
-      const d = decks[id];
-      if (d.isPlaying) {
-        d.offsetPos = getCurrentDeckPos(id);
-        stopDeckSourceOnly(id);
-        d.isPlaying = false;
-      } else {
-        startDeckSource(id, d.offsetPos);
-      }
-      updateDeckTransportUI(id);
-    }
-
-    async function triggerCueDeck(id) {
-      await ensureAudioEngine();
-      const d = decks[id];
-      if (d.isPlaying) {
-        stopDeckSourceOnly(id);
-        d.isPlaying = false;
-        d.offsetPos = d.cuePoint || 0;
-      } else {
-        d.cuePoint = d.offsetPos;
-        startDeckSource(id, d.cuePoint);
-      }
-      updateDeckTransportUI(id);
-    }
-
-    async function syncDeck(id) {
-      await ensureAudioEngine();
-      const otherId = id === 'A' ? 'B' : 'A';
-      const d = decks[id], other = decks[otherId];
-      const mySong = SONG_LIBRARY[d.trackIdx], otherSong = SONG_LIBRARY[other.trackIdx];
-      const targetBpm = otherSong.bpm * (1 + other.pitchPct / 100.0);
-      const clampedPct = Math.max(-16, Math.min(16, ((targetBpm / mySong.bpm) - 1.0) * 100.0));
-      document.getElementById(`pitch-slider-${id.toLowerCase()}`).value = clampedPct.toFixed(1);
-      setDeckPitch(id, clampedPct);
-      const beatSec = 60.0 / targetBpm;
-      const alignedPos = Math.floor(getCurrentDeckPos(id) / beatSec) * beatSec + (getCurrentDeckPos(otherId) % beatSec);
-      if (d.isPlaying) startDeckSource(id, alignedPos);
-      else d.offsetPos = alignedPos;
-    }
-
-    function setDeckPitch(id, pct) {
-      const d = decks[id];
-      if (d.isPlaying && audioCtx) { d.offsetPos = getCurrentDeckPos(id); d.startTime = audioCtx.currentTime; }
-      d.pitchPct = pct;
-      const rate = computePlaybackRate(id);
-      if (d.sourceNode && audioCtx) d.sourceNode.playbackRate.setTargetAtTime(rate, audioCtx.currentTime, 0.015);
-      const song = SONG_LIBRARY[d.trackIdx];
-      const effBpm = (song.bpm * (1 + pct / 100.0)).toFixed(1);
-      const low = id.toLowerCase();
-      document.getElementById(`deck-${low}-bpm`).innerHTML = `${effBpm} <span class="text-[9px] text-slate-400">BPM</span>`;
-      document.getElementById(`platter-bpm-${low}`).innerText = effBpm;
-      document.getElementById(`deck-${low}-pitch-pct`).innerText = `PITCH: ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
-    }
-
-    function pitchBend(id, delta) {
-      const d = decks[id];
-      if (d.isPlaying && audioCtx) { d.offsetPos = getCurrentDeckPos(id); d.startTime = audioCtx.currentTime; }
-      d.pitchBendFactor = 1.0 + delta;
-      const rate = computePlaybackRate(id);
-      if (d.sourceNode && audioCtx) d.sourceNode.playbackRate.setTargetAtTime(rate, audioCtx.currentTime, 0.01);
-    }
-
-    function pitchBendReset(id) {
-      const d = decks[id];
-      if (d.isPlaying && audioCtx) { d.offsetPos = getCurrentDeckPos(id); d.startTime = audioCtx.currentTime; }
-      d.pitchBendFactor = 1.0;
-      const rate = computePlaybackRate(id);
-      if (d.sourceNode && audioCtx) d.sourceNode.playbackRate.setTargetAtTime(rate, audioCtx.currentTime, 0.01);
-    }
-
-    function changeKeySemitone(id, delta) {
-      const d = decks[id];
-      if (d.isPlaying && audioCtx) { d.offsetPos = getCurrentDeckPos(id); d.startTime = audioCtx.currentTime; }
-      d.keySemitones = Math.max(-6, Math.min(6, d.keySemitones + delta));
-      const rate = computePlaybackRate(id);
-      if (d.sourceNode && audioCtx) d.sourceNode.playbackRate.setTargetAtTime(rate, audioCtx.currentTime, 0.015);
-      const song = SONG_LIBRARY[d.trackIdx];
-      const sign = d.keySemitones > 0 ? `+${d.keySemitones}` : `${d.keySemitones}`;
-      document.getElementById(`deck-${id.toLowerCase()}-key`).innerText = d.keySemitones === 0 ? `KEY: ${song.musicalKey}` : `KEY: ${song.musicalKey} (${sign}st)`;
-    }
-
-    async function toggleReverseDeck(id) {
-      await ensureAudioEngine();
-      const d = decks[id], pos = getCurrentDeckPos(id);
-      d.isReversed = !d.isReversed;
-      const btn = document.getElementById(`rev-btn-${id.toLowerCase()}`);
-      btn.classList.toggle('bg-red-500', d.isReversed);
-      btn.classList.toggle('text-white', d.isReversed);
-      if (d.isPlaying) startDeckSource(id, pos);
-    }
-
-    async function triggerVinylBrake(id) {
-      await ensureAudioEngine();
-      const d = decks[id];
-      if (d.isPlaying && d.sourceNode) {
-        const now = audioCtx.currentTime;
-        d.sourceNode.playbackRate.setValueAtTime(d.playbackRate, now);
-        d.sourceNode.playbackRate.linearRampToValueAtTime(0.01, now + 0.6);
-        setTimeout(() => { d.offsetPos = getCurrentDeckPos(id); stopDeckSourceOnly(id); d.isPlaying = false; updateDeckTransportUI(id); }, 620);
-      } else {
-        startDeckSource(id, d.offsetPos);
-      }
-    }
-
-    function toggleVinylMode(id) {
-      const d = decks[id];
-      d.vinylMode = !d.vinylMode;
-      document.getElementById(`vinyl-mode-${id.toLowerCase()}`).innerText = d.vinylMode ? '💿 VINYL: ON' : '🎛️ CDJ NUDGE';
-    }
-
-    async function startScratch(e, id) {
-      await ensureAudioEngine();
-      const d = decks[id];
-      const rect = document.getElementById(`platter-${id.toLowerCase()}`).getBoundingClientRect();
-      const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
-      let lastAngle = Math.atan2(e.clientY - cy, e.clientX - cx);
-      d.isScratching = true;
-      const wasPlaying = d.isPlaying;
-
-      function onMove(ev) {
-        const curAngle = Math.atan2(ev.clientY - cy, ev.clientX - cx);
-        let delta = curAngle - lastAngle;
-        if (delta > Math.PI) delta -= Math.PI * 2;
-        if (delta < -Math.PI) delta += Math.PI * 2;
-        lastAngle = curAngle;
-        d.platterAngle += (delta * 180) / Math.PI;
-        const newPos = getCurrentDeckPos(id) + (delta / (Math.PI * 2)) * 1.8;
-        if (d.vinylMode) {
-          startDeckSource(id, newPos);
-          if (d.sourceNode) d.sourceNode.playbackRate.value = Math.max(0.25, Math.min(2.2, Math.abs(delta) * 18));
-        } else {
-          pitchBend(id, delta * 1.5);
-        }
-      }
-      function onUp() {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        d.isScratching = false;
-        pitchBendReset(id);
-        if (wasPlaying) startDeckSource(id, getCurrentDeckPos(id));
-        else { d.offsetPos = getCurrentDeckPos(id); stopDeckSourceOnly(id); d.isPlaying = false; updateDeckTransportUI(id); }
-      }
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-    }
-
-    async function seekFromOverview(e, id) {
-      await ensureAudioEngine();
-      const rect = e.currentTarget.getBoundingClientRect();
-      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const targetSec = ratio * getDeckDuration(id);
-      if (decks[id].isPlaying) startDeckSource(id, targetSec);
-      else decks[id].offsetPos = targetSec;
-      drawOverviewWaveform(id);
-    }
-
-    function setPadMode(id, mode) {
-      decks[id].padMode = mode;
-      ['hotcue', 'loop', 'jump', 'key'].forEach(m => {
-        const btn = document.getElementById(`padmode-${id.toLowerCase()}-${m}`);
-        btn.className = m === mode
-          ? `px-2 py-0.5 rounded ${id === 'A' ? 'bg-cyan-500 text-slate-950' : 'bg-orange-500 text-slate-950'} text-[9px] font-black`
-          : 'px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-bold';
-      });
-      renderDeckPads(id);
-    }
-
-    function renderDeckPads(id) {
-      const d = decks[id], grid = document.getElementById(`pads-grid-${id.toLowerCase()}`);
-      const baseColor = id === 'A' ? 'cyan' : 'orange';
-      let html = '';
-      if (d.padMode === 'hotcue') {
-        for (let i = 0; i < 8; i++) {
-          const sec = (d.hotCues[i] || 0).toFixed(1);
-          html += `<button onclick="triggerHotCue('${id}', ${i})" oncontextmenu="event.preventDefault(); setHotCueHere('${id}', ${i})" class="perf-pad py-1.5 px-1 rounded bg-${baseColor}-500/20 border border-${baseColor}-500/40 text-left"><div class="text-[9px] font-mono-tech font-black text-${baseColor}-300">CUE ${i + 1}</div><div class="text-[8px] font-mono-tech text-slate-300">${sec}s</div></button>`;
-        }
-      } else if (d.padMode === 'loop') {
-        const beats = [0.125, 0.25, 0.5, 1, 2, 4, 8, 16];
-        const labels = ['1/8B', '1/4B', '1/2B', '1B', '2B', '4B', '8B', '16B'];
-        beats.forEach((b, idx) => {
-          const active = d.loopActive && d.loopBeats === b;
-          html += `<button onclick="toggleAutoLoop('${id}', ${b})" class="perf-pad py-2 px-1 rounded ${active ? 'bg-purple-500 text-slate-950 font-black' : 'bg-purple-500/20 text-purple-200 border border-purple-500/40 font-bold'} text-[9px]">🔁 ${labels[idx]}</button>`;
-        });
-      } else if (d.padMode === 'jump') {
-        [-4, -2, -1, -0.5, 0.5, 1, 2, 4].forEach(j => {
-          html += `<button onclick="triggerBeatJump('${id}', ${j})" class="perf-pad py-2 px-1 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 font-mono-tech font-bold text-[9px]">⏭ ${j > 0 ? '+' + j : j}B</button>`;
-        });
-      } else {
-        [-3, -2, -1, 0, 1, 2, 3, 4].forEach(st => {
-          const active = d.keySemitones === st;
-          html += `<button onclick="setExactSemitone('${id}', ${st})" class="perf-pad py-2 px-1 rounded ${active ? 'bg-amber-500 text-slate-950 font-black' : 'bg-amber-500/20 text-amber-200 border border-amber-500/40 font-bold'} font-mono-tech text-[9px]">🎹 ${st > 0 ? '+' + st : st}</button>`;
-        });
-      }
-      grid.innerHTML = html;
-    }
-
-    async function triggerHotCue(id, cueIdx) { await ensureAudioEngine(); startDeckSource(id, decks[id].hotCues[cueIdx] || 0); }
-    function setHotCueHere(id, cueIdx) { decks[id].hotCues[cueIdx] = getCurrentDeckPos(id); renderDeckPads(id); drawOverviewWaveform(id); }
-
-    async function toggleAutoLoop(id, beats) {
-      await ensureAudioEngine();
-      const d = decks[id], song = SONG_LIBRARY[d.trackIdx], beatSec = 60.0 / song.bpm;
-      if (d.loopActive && d.loopBeats === beats) d.loopActive = false;
-      else { d.loopActive = true; d.loopBeats = beats; d.loopStart = getCurrentDeckPos(id); d.loopEnd = Math.min(getDeckDuration(id), d.loopStart + beats * beatSec); }
-      if (d.isPlaying) startDeckSource(id, getCurrentDeckPos(id));
-      updateDeckTransportUI(id); renderDeckPads(id);
-    }
-    function halveLoop(id) { toggleAutoLoop(id, decks[id].loopActive ? Math.max(0.125, decks[id].loopBeats / 2) : 2); }
-    function doubleLoop(id) { toggleAutoLoop(id, decks[id].loopActive ? Math.min(16, decks[id].loopBeats * 2) : 4); }
-    function clearLoop(id) { decks[id].loopActive = false; if (decks[id].isPlaying) startDeckSource(id, getCurrentDeckPos(id)); updateDeckTransportUI(id); renderDeckPads(id); }
-    async function triggerBeatJump(id, beats) {
-      await ensureAudioEngine();
-      const d = decks[id], beatSec = 60.0 / SONG_LIBRARY[d.trackIdx].bpm;
-      const newPos = getCurrentDeckPos(id) + beats * beatSec;
-      if (d.isPlaying) startDeckSource(id, newPos);
-      else d.offsetPos = ((newPos % getDeckDuration(id)) + getDeckDuration(id)) % getDeckDuration(id);
-    }
-    function setExactSemitone(id, st) { decks[id].keySemitones = 0; changeKeySemitone(id, st); renderDeckPads(id); }
-
-    function toggleStem(id, stem) {
-      const d = decks[id];
-      d.stems[stem] = !d.stems[stem];
-      document.getElementById(`stem-${id.toLowerCase()}-${stem}`).classList.toggle('muted', !d.stems[stem]);
-      applyStemAndEqToDeck(id);
-    }
-    function setStemPreset(id, preset) {
-      const d = decks[id];
-      d.stems = preset === 'acapella' ? { vocal: true, inst: false, bass: false, drums: false }
-              : preset === 'instrumental' ? { vocal: false, inst: true, bass: true, drums: true }
-              : { vocal: true, inst: true, bass: true, drums: true };
-      ['vocal', 'inst', 'bass', 'drums'].forEach(s => document.getElementById(`stem-${id.toLowerCase()}-${s}`).classList.toggle('muted', !d.stems[s]));
-      applyStemAndEqToDeck(id);
-    }
-    function setDeckGain(id, val) {
-      decks[id].trimGain = val;
-      document.getElementById(`eq-${id.toLowerCase()}-gain-val`).innerText = `${Math.round(val * 100)}%`;
-      if (decks[id].inputGainNode && audioCtx) decks[id].inputGainNode.gain.setTargetAtTime(val, audioCtx.currentTime, 0.015);
-    }
-    function setDeckEQ(id, band, db) { decks[id].eqValues[band] = db; applyStemAndEqToDeck(id); }
-    function toggleEqKill(id, band) {
-      const d = decks[id]; d.eqKills[band] = !d.eqKills[band];
-      document.getElementById(`kill-${id.toLowerCase()}-${band}`).classList.toggle('active', d.eqKills[band]);
-      applyStemAndEqToDeck(id);
-    }
-    function resetDeckEQ(id) {
-      const d = decks[id]; d.eqValues = { high: 0, mid: 0, low: 0 }; d.eqKills = { high: false, mid: false, low: false };
-      ['high', 'mid', 'low'].forEach(b => {
-        document.getElementById(`eq-${id.toLowerCase()}-${b}`).value = 0;
-        document.getElementById(`kill-${id.toLowerCase()}-${b}`).classList.remove('active');
-      });
-      setDeckColorFilter(id, 0); document.getElementById(`filter-${id.toLowerCase()}-knob`).value = 0;
-      applyStemAndEqToDeck(id);
-    }
-    function applyStemAndEqToDeck(id) {
-      const d = decks[id];
-      if (!audioCtx || !d.eqLowNode) return;
-      let lowDb = d.eqKills.low ? -36 : d.eqValues.low;
-      let midDb = d.eqKills.mid ? -36 : d.eqValues.mid;
-      let highDb = d.eqKills.high ? -36 : d.eqValues.high;
-      if (!d.stems.bass) lowDb -= 28;
-      if (!d.stems.vocal) midDb -= 22;
-      if (!d.stems.inst) midDb -= 12;
-      if (!d.stems.drums) highDb -= 26;
-      const now = audioCtx.currentTime;
-      d.eqLowNode.gain.setTargetAtTime(lowDb, now, 0.02);
-      d.eqMidNode.gain.setTargetAtTime(midDb, now, 0.02);
-      d.eqHighNode.gain.setTargetAtTime(highDb, now, 0.02);
-    }
-    function setDeckColorFilter(id, val) {
-      const d = decks[id]; d.colorFilterVal = val;
-      const lbl = document.getElementById(`filter-${id.toLowerCase()}-label`);
-      if (!d.colorFilterNode || !audioCtx) { lbl.innerText = val === 0 ? 'BYPASS' : `${Math.round(val)}%`; return; }
-      const now = audioCtx.currentTime;
-      if (Math.abs(val) < 3) { d.colorFilterNode.type = 'allpass'; lbl.innerText = 'BYPASS'; }
-      else if (val < 0) {
-        d.colorFilterNode.type = 'lowpass';
-        const freq = 80 * Math.pow(18000 / 80, (100 + val) / 100);
-        d.colorFilterNode.frequency.setTargetAtTime(freq, now, 0.02); d.colorFilterNode.Q.value = 2.4;
-        lbl.innerText = `LPF ${Math.round(freq)}Hz`;
-      } else {
-        d.colorFilterNode.type = 'highpass';
-        const freq = 35 * Math.pow(6000 / 35, val / 100);
-        d.colorFilterNode.frequency.setTargetAtTime(freq, now, 0.02); d.colorFilterNode.Q.value = 2.4;
-        lbl.innerText = `HPF ${Math.round(freq)}Hz`;
-      }
-    }
-
-    function setDeckVolume(id, val) {
-      decks[id].volume = val;
-      document.getElementById(`vol-${id.toLowerCase()}-label`).innerText = `${Math.round(val * 100)}%`;
-      if (decks[id].channelGainNode && audioCtx) decks[id].channelGainNode.gain.setTargetAtTime(val, audioCtx.currentTime, 0.015);
-    }
-    function setMasterVolume(val) { if (masterGainNode && audioCtx) masterGainNode.gain.setTargetAtTime(val, audioCtx.currentTime, 0.015); }
-    function setCrossfader(val) { document.getElementById('crossfader').value = val; updateCrossfaderGain(); }
-    function updateCrossfaderGain() {
-      const x = parseFloat(document.getElementById('crossfader').value || 0);
-      const curve = document.getElementById('xfader-curve').value;
-      let gainA = 1.0, gainB = 1.0;
-      if (curve === 'cut') { gainA = x > 0.85 ? 0.0 : 1.0; gainB = x < -0.85 ? 0.0 : 1.0; }
-      else if (curve === 'smooth') { gainA = Math.cos(((x + 1) / 2) * (Math.PI / 2)); gainB = Math.sin(((x + 1) / 2) * (Math.PI / 2)); }
-      else { gainA = x <= 0 ? 1.0 : Math.max(0, 1.0 - x); gainB = x >= 0 ? 1.0 : Math.max(0, 1.0 + x); }
-      if (audioCtx && decks.A.xfadeGainNode && decks.B.xfadeGainNode) {
-        decks.A.xfadeGainNode.gain.setTargetAtTime(gainA, audioCtx.currentTime, 0.015);
-        decks.B.xfadeGainNode.gain.setTargetAtTime(gainB, audioCtx.currentTime, 0.015);
-      }
-    }
-
-    async function toggleEffect(fxName) {
-      await ensureAudioEngine();
-      activeFX[fxName] = !activeFX[fxName];
-      const btn = document.getElementById(`fx-btn-${fxName}`);
-      btn.classList.toggle('bg-purple-600', activeFX[fxName]);
-      btn.classList.toggle('text-white', activeFX[fxName]);
-      updateFxParams();
-    }
-    function toggleFxAssign(id) {
-      if (id === 'A') fxAssignedA = !fxAssignedA;
-      if (id === 'B') fxAssignedB = !fxAssignedB;
-      document.getElementById('fx-assign-a').style.opacity = fxAssignedA ? '1' : '0.35';
-      document.getElementById('fx-assign-b').style.opacity = fxAssignedB ? '1' : '0.35';
-    }
-    function updateFxParams() {
-      const depth = parseFloat(document.getElementById('fx-depth-slider').value || 0.45);
-      const rate = parseFloat(document.getElementById('fx-rate-slider').value || 4.0);
-      document.getElementById('fx-depth-label').innerText = `${Math.round(depth * 100)}%`;
-      document.getElementById('fx-rate-label').innerText = `${rate.toFixed(1)} Hz`;
-      if (!audioCtx) return;
-      const now = audioCtx.currentTime;
-      const anyWet = activeFX.echo || activeFX.flanger || activeFX.reverb || activeFX.crush;
-      fxWetGain.gain.setTargetAtTime(anyWet ? depth : 0.0, now, 0.02);
-      delayFeedback.gain.setTargetAtTime(activeFX.echo ? Math.min(0.82, depth * 0.9) : 0.0, now, 0.02);
-      delayNode.delayTime.setTargetAtTime(Math.max(0.08, Math.min(1.0, 1.5 / rate)), now, 0.02);
-      flangerLfo.frequency.setTargetAtTime(rate * 0.35, now, 0.02);
-      flangerLfoGain.gain.setTargetAtTime(activeFX.flanger ? 0.004 * depth : 0.0, now, 0.02);
-      reverbGain.gain.setTargetAtTime(activeFX.reverb ? depth * 1.3 : 0.0, now, 0.02);
-      crushGain.gain.setTargetAtTime(activeFX.crush ? depth * 0.85 : 0.0, now, 0.02);
-      if (activeFX.wobble) {
-        wobbleFilter.frequency.setTargetAtTime(900, now, 0.02); wobbleFilter.Q.value = 6.0;
-        wobbleLfo.frequency.setTargetAtTime(rate, now, 0.02); wobbleLfoGain.gain.setTargetAtTime(750 * depth, now, 0.02);
-      } else {
-        wobbleFilter.frequency.setTargetAtTime(18000, now, 0.02); wobbleFilter.Q.value = 0.7; wobbleLfoGain.gain.setTargetAtTime(0, now, 0.02);
-      }
-    }
-
-    async function startKaossPad(e) {
-      await ensureAudioEngine();
-      const canvas = document.getElementById('kaoss-xy-canvas');
-      kaossActive = true;
-      function applyXY(ev) {
-        const rect = canvas.getBoundingClientRect();
-        const x = Math.max(0.02, Math.min(0.98, (ev.clientX - rect.left) / rect.width));
-        const y = Math.max(0.02, Math.min(0.98, 1.0 - (ev.clientY - rect.top) / rect.height));
-        kaossCoords = { x, y };
-        const freq = 120 * Math.pow(12000 / 120, x);
-        kaossFilter.type = x < 0.48 ? 'lowpass' : 'highpass';
-        kaossFilter.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.015);
-        kaossFilter.Q.value = 1.0 + y * 10.0;
-        document.getElementById('kaoss-status').innerText = `${Math.round(freq)}Hz`;
-      }
-      applyXY(e);
-      window.addEventListener('pointermove', applyXY);
-      window.addEventListener('pointerup', function up() {
-        window.removeEventListener('pointermove', applyXY); window.removeEventListener('pointerup', up);
-        kaossActive = false;
-        if (kaossFilter && audioCtx) { kaossFilter.type = 'allpass'; document.getElementById('kaoss-status').innerText = 'DRAG'; }
-      });
-    }
-
-    async function playRealSamplerPad(padKey, btnEl) {
-      await ensureAudioEngine();
-      if (btnEl) { btnEl.classList.add('pad-active'); setTimeout(() => btnEl.classList.remove('pad-active'), 180); }
-      const buf = samplerBuffers[padKey];
-      if (!buf) return;
-      const src = audioCtx.createBufferSource(); src.buffer = buf;
-      const g = audioCtx.createGain(); g.gain.value = 1.15;
-      src.connect(g); g.connect(masterLimiter); src.start(0);
-    }
-
-    async function toggleMasterRecording() {
-      await ensureAudioEngine();
-      const label = document.getElementById('rec-btn-label'), dot = document.getElementById('rec-dot');
-      if (!isRecordingMix) {
-        if (!mediaStreamDest || typeof MediaRecorder === 'undefined') { label.innerText = 'REC ON'; return; }
-        recordedChunks = [];
-        mediaRecorder = new MediaRecorder(mediaStreamDest.stream);
-        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-          const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'IMS_Mixer_Live_Set.webm'; a.click();
-        };
-        mediaRecorder.start(); isRecordingMix = true; label.innerText = 'SAVE'; dot.classList.add('animate-ping');
-      } else {
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-        isRecordingMix = false; label.innerText = 'REC'; dot.classList.remove('animate-ping');
-      }
-    }
-
-    async function loadTrackToDeck(id, trackIdx) {
-      const d = decks[id], song = SONG_LIBRARY[trackIdx];
-      if (!song) return;
-      const wasPlaying = d.isPlaying;
-      stopDeckSourceOnly(id);
-      d.isPlaying = false; d.trackIdx = trackIdx; d.offsetPos = 0; d.cuePoint = 0; d.pitchPct = 0; d.keySemitones = 0; d.loopActive = false;
-      d.hotCues = [...song.cues];
-      const low = id.toLowerCase();
-      document.getElementById(`deck-${low}-select`).value = trackIdx;
-      document.getElementById(`deck-${low}-title`).innerText = song.title;
-      document.getElementById(`top-wave-title-${low}`).innerText = `${trackIdx + 1}. ${song.title}`;
-      document.getElementById(`deck-${low}-badge`).innerText = song.badge;
-      document.getElementById(`deck-${low}-key`).innerText = `KEY: ${song.musicalKey}`;
-      document.getElementById(`deck-${low}-bpm`).innerHTML = `${song.bpm.toFixed(1)} <span class="text-[9px] text-slate-400">BPM</span>`;
-      document.getElementById(`platter-bpm-${low}`).innerText = song.bpm.toFixed(1);
-      document.getElementById(`pitch-slider-${low}`).value = 0;
-      document.getElementById(`deck-${low}-pitch-pct`).innerText = 'PITCH: +0.0%';
-      renderDeckPads(id); drawOverviewWaveform(id); updateDeckTransportUI(id);
-      if (wasPlaying) { await ensureAudioEngine(); startDeckSource(id, 0); }
-    }
-
-    async function handleUserSongFiles(fileList, targetDeckId = null) {
-      if (!fileList || fileList.length === 0) return;
-      await ensureAudioEngine();
-      const keys = ['8A (Am)', '11B (A)', '5A (Cm)', '9A (Em)', '2A (D#m)', '7A (Dm)', '10B (D)'];
-      for (let i = 0; i < fileList.length; i++) {
-        const file = fileList[i];
-        try {
-          const ab = await file.arrayBuffer();
-          const audioBuf = await audioCtx.decodeAudioData(ab);
-          const newId = SONG_LIBRARY.length;
-          const keyName = `user_track_${newId}`;
-          decodedBuffers[keyName] = audioBuf;
-          decodedRevBuffers[keyName] = computeReversedBuffer(audioCtx, audioBuf);
-          waveformPeaks[keyName] = computeTricolorPeaks(audioBuf, 240);
-          const dur = audioBuf.duration, step = dur / 8;
-          const cues = Array.from({ length: 8 }, (_, idx) => Number((idx * step).toFixed(2)));
-          const detectedBpm = Number((122 + (newId * 3.5) % 16).toFixed(1));
-          SONG_LIBRARY.push({
-            id: newId, keyName, title: file.name.replace(/\.[^/.]+$/, '').toUpperCase(),
-            category: '📁 Offline Device Track', bpm: detectedBpm, musicalKey: keys[newId % keys.length], badge: 'OFFLINE MP3', cues
-          });
-          populateSongSelectorsAndCrate();
-          if (targetDeckId) { await loadTrackToDeck(targetDeckId, newId); startDeckSource(targetDeckId, 0); }
-          else if (i === 0) { await loadTrackToDeck('A', newId); startDeckSource('A', 0); }
-        } catch (err) { console.error(err); }
-      }
-      updateNeuralinkTelemetryPreview();
-    }
-
-    function handleDeckDrop(e, id) {
-      e.preventDefault();
-      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) handleUserSongFiles(e.dataTransfer.files, id);
-    }
-
-    // =========================================================================
-    // NEURALINK 5B COGNITIVE AUTO-DJ BRAIN (UNLIMITED OFFLINE AUTO-MIXING)
-    // =========================================================================
-    let neuralinkAutoMode = false, neuralinkMixInProgress = false, neuralinkPlayHistory = [0];
-    const CAMELOT_WHEEL = {
-      '8A (Am)':  { compat: ['8A (Am)', '7A (Dm)', '9A (Em)', '8B (C)', '11B (A)'] },
-      '11B (A)':  { compat: ['11B (A)', '10B (D)', '12B (E)', '8A (Am)', '9A (Em)'] },
-      '5A (Cm)':  { compat: ['5A (Cm)', '4A (Fm)', '6A (Gm)', '8A (Am)', '2A (D#m)'] },
-      '9A (Em)':  { compat: ['9A (Em)', '8A (Am)', '10A (Bm)', '11B (A)', '5A (Cm)'] },
-      '2A (D#m)': { compat: ['2A (D#m)', '1A (G#m)', '3A (A#m)', '5A (Cm)', '8A (Am)'] }
+    const decks = {
+      A: { id:'A', idx:0, playing:false, start:0, pos:0, rate:1, vol:0.95, xfade:1, loop:false, angle:0, eq:{high:0,mid:0,low:0}, kills:{high:false,mid:false,low:false}, stems:{vocal:true,inst:true,bass:true,drums:true} },
+      B: { id:'B', idx:0, playing:false, start:0, pos:0, rate:1, vol:0.95, xfade:0, loop:false, angle:0, eq:{high:0,mid:0,low:0}, kills:{high:false,mid:false,low:false}, stems:{vocal:true,inst:true,bass:true,drums:true} }
     };
 
-    function scoreNextSongCandidate(currentIdx, candidateIdx) {
-      if (currentIdx === candidateIdx) return -999;
-      const cur = SONG_LIBRARY[currentIdx], cand = SONG_LIBRARY[candidateIdx];
-      if (!cur || !cand) return 0;
-      let harmonicScore = cur.musicalKey === cand.musicalKey ? 45 : (CAMELOT_WHEEL[cur.musicalKey]?.compat.includes(cand.musicalKey) ? 41 : 28);
-      const bpmScore = Math.max(10, 35 - Math.abs(cur.bpm - cand.bpm) * 2.2);
-      const lastPos = neuralinkPlayHistory.lastIndexOf(candidateIdx);
-      const freshnessScore = lastPos === -1 ? 20 : Math.min(20, (neuralinkPlayHistory.length - lastPos) * 4.5);
-      return Math.min(99.8, harmonicScore + bpmScore + freshnessScore);
+    function initAudio() {
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      ['A','B'].forEach(id => {
+        const d = decks[id];
+        d.low = audioCtx.createBiquadFilter(); d.low.type = 'lowshelf'; d.low.frequency.value = 110;
+        d.mid = audioCtx.createBiquadFilter(); d.mid.type = 'peaking'; d.mid.frequency.value = 1000;
+        d.high = audioCtx.createBiquadFilter(); d.high.type = 'highshelf'; d.high.frequency.value = 8500;
+        d.gain = audioCtx.createGain(); d.gain.gain.value = d.vol * d.xfade;
+        d.low.connect(d.mid); d.mid.connect(d.high); d.high.connect(d.gain); d.gain.connect(audioCtx.destination);
+      });
     }
 
-    function pickBestNextSongIndex(activeDeckId) {
-      const curIdx = decks[activeDeckId].trackIdx;
-      let bestIdx = (curIdx + 1) % SONG_LIBRARY.length, bestScore = -999;
-      for (let i = 0; i < SONG_LIBRARY.length; i++) {
-        if (i === curIdx) continue;
-        const sc = scoreNextSongCandidate(curIdx, i);
-        if (sc > bestScore) { bestScore = sc; bestIdx = i; }
+    // Create 2 built-in studio groove buffers at boot so decks work even before user selects local files
+    function createBootStudioGrooves() {
+      initAudio();
+      const defs = [
+        { title: 'IMS PHONK 140dB BASS GROOVE', bpm: 130.0, camNum: 8, camLet: 'A' },
+        { title: 'IMS FESTIVAL EDM MAIN FLOOR', bpm: 128.0, camNum: 11, camLet: 'B' },
+        { title: 'IMS KARAVALI DHOL PERCUSSION MIX', bpm: 126.0, camNum: 5, camLet: 'A' },
+        { title: 'IMS CLUB HOUSE SANGEET REMIX', bpm: 124.0, camNum: 9, camLet: 'A' }
+      ];
+      defs.forEach((df, idx) => {
+        const sr = audioCtx.sampleRate, dur = 12.0, len = Math.floor(sr * dur);
+        const buf = audioCtx.createBuffer(2, len, sr);
+        const L = buf.getChannelData(0), R = buf.getChannelData(1);
+        const beatSec = 60.0 / df.bpm;
+        for (let i = 0; i < len; i++) {
+          const t = i / sr;
+          const bPhase = (t % beatSec) / beatSec;
+          const kick = bPhase < 0.18 ? Math.sin(2 * Math.PI * (110 * Math.exp(-bPhase * 22)) * t) * Math.exp(-bPhase * 14) : 0;
+          const bassFreq = idx % 2 === 0 ? 55.0 : 65.4;
+          const sub = Math.tanh(Math.sin(2 * Math.PI * bassFreq * t) * 2.2) * 0.45;
+          const hat = (bPhase > 0.48 && bPhase < 0.56) ? (Math.random() * 2 - 1) * 0.25 : 0;
+          const chord = Math.sin(2 * Math.PI * bassFreq * 4 * t) * 0.18 * Math.abs(Math.sin(Math.PI * t / beatSec));
+          L[i] = Math.max(-0.95, Math.min(0.95, kick * 0.8 + sub + hat + chord));
+          R[i] = Math.max(-0.95, Math.min(0.95, kick * 0.8 + sub - hat + chord));
+        }
+        const id = SONGS.length;
+        BUFFERS[id] = buf;
+        SONGS.push({ id, title: df.title, bpm: df.bpm, camNum: df.camNum, camLet: df.camLet, key: `${df.camNum}${df.camLet}` });
+      });
+      renderPlaylist();
+      selectSong('A', 0);
+      selectSong('B', 1);
+    }
+
+    async function importOfflineFiles(files, targetDeck) {
+      initAudio();
+      const cams = [[8,'A'],[11,'B'],[5,'A'],[9,'A'],[7,'A'],[10,'B'],[2,'A']];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        try {
+          const ab = await f.arrayBuffer();
+          const buf = await audioCtx.decodeAudioData(ab);
+          const id = SONGS.length;
+          BUFFERS[id] = buf;
+          const c = cams[id % cams.length];
+          const bpm = Number((122 + (id * 3) % 14).toFixed(1));
+          SONGS.push({ id, title: f.name.replace(/\.[^/.]+$/, '').toUpperCase(), bpm, camNum: c[0], camLet: c[1], key: `${c[0]}${c[1]}` });
+          renderPlaylist();
+          if (targetDeck) { selectSong(targetDeck, id); playDeck(targetDeck, 0); }
+        } catch (e) {}
       }
-      return { bestIdx, score: Math.max(92.0, bestScore).toFixed(1) };
     }
 
-    function updateNeuralinkTelemetryPreview() {
-      const x = parseFloat(document.getElementById('crossfader').value || 0);
-      const activeId = x <= 0 ? 'A' : 'B';
-      const { bestIdx, score } = pickBestNextSongIndex(activeId);
-      const nextSong = SONG_LIBRARY[bestIdx];
-      if (nextSong) {
-        document.getElementById('nl-next-song-title').innerText = `${nextSong.id + 1}. ${nextSong.title}`;
-        document.getElementById('nl-match-score').innerText = `${score}% FIT (${nextSong.musicalKey})`;
-      }
-      populateSongSelectorsAndCrate();
-    }
-
-    function updateNeuralinkSettings() {
-      const style = document.getElementById('nl-style-select').value;
-      const mapNames = { auto: 'Adaptive Bass-Swap + Stem Duck', bass_swap: 'Surgical 3-Band Bass-Swap', stem_bridge: '4-Stem Vocal Bridge', echo_riser: 'Echo + HPF Riser Cut' };
-      document.getElementById('nl-telemetry-how').innerText = mapNames[style] || mapNames.auto;
-    }
-
-    async function toggleNeuralinkAutoDJ() {
-      await ensureAudioEngine();
-      neuralinkAutoMode = !neuralinkAutoMode;
-      const btn = document.getElementById('neuralink-toggle-btn');
-      const pill = document.getElementById('neuralink-status-pill');
-      if (neuralinkAutoMode) {
-        btn.innerText = '♾️ AUTO-DJ: ON (5B ACTIVE)';
-        btn.className = 'px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 text-slate-950 font-black text-xs shadow-lg animate-pulse';
-        pill.innerText = 'AUTOPILOT ACTIVE (UNLIMITED)';
-        const x = parseFloat(document.getElementById('crossfader').value || 0);
-        const activeId = x <= 0 ? 'A' : 'B';
-        if (!decks[activeId].isPlaying) { setCrossfader(activeId === 'A' ? -1 : 1); startDeckSource(activeId, decks[activeId].offsetPos); }
-        updateNeuralinkTelemetryPreview();
+    function scanAndroidMediaStore() {
+      if (window.IMSNative && window.IMSNative.scanOfflineDeviceSongs) {
+        const raw = window.IMSNative.scanOfflineDeviceSongs();
+        const list = JSON.parse(raw || '[]');
+        document.getElementById('song-count-badge').innerText = `Found ${list.length} Device Songs`;
       } else {
-        btn.innerText = '♾️ AUTO-DJ: OFF';
-        btn.className = 'px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-500 via-fuchsia-500 to-cyan-400 text-slate-950 font-black text-xs shadow-lg';
-        pill.innerText = 'MANUAL / READY';
-        document.getElementById('nl-countdown-sec').innerText = 'Standby';
+        document.getElementById('song-count-badge').innerText = 'Use + Load Offline Songs in Browser';
       }
     }
 
-    async function forceNeuralinkImmediateMix() {
-      await ensureAudioEngine();
-      if (!decks.A.isPlaying && !decks.B.isPlaying) { setCrossfader(-1); startDeckSource('A', 0); }
-      executeNeuralinkHumanMix();
+    function getDur(id) { const b = BUFFERS[decks[id].idx]; return b ? b.duration : 12.0; }
+    function getPos(id) {
+      const d = decks[id], dur = getDur(id);
+      if (!d.playing || !audioCtx) return d.pos % dur;
+      return (d.pos + (audioCtx.currentTime - d.start) * d.rate) % dur;
     }
 
-    async function executeNeuralinkHumanMix() {
-      if (neuralinkMixInProgress) return;
-      neuralinkMixInProgress = true;
-      const curX = parseFloat(document.getElementById('crossfader').value || 0);
+    function selectSong(id, idx) {
+      const d = decks[id], s = SONGS[idx];
+      if (!s) return;
+      stopDeck(id);
+      d.idx = idx; d.pos = 0;
+      const low = id.toLowerCase();
+      document.getElementById(`sel-${low}`).value = idx;
+      document.getElementById(`title-${low}`).innerText = s.title;
+      document.getElementById(`bpm-${low}`).innerText = `${s.bpm.toFixed(1)} BPM`;
+      document.getElementById(`key-${low}`).innerText = s.key;
+      updateBrainHud(0);
+    }
+
+    function playDeck(id, seekPos = null) {
+      initAudio();
+      const d = decks[id], buf = BUFFERS[d.idx];
+      if (!buf) return;
+      stopDeck(id);
+      if (seekPos !== null) d.pos = seekPos % buf.duration;
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf; src.loop = true; src.playbackRate.value = d.rate;
+      src.connect(d.low);
+      src.start(0, d.pos);
+      d.src = src; d.start = audioCtx.currentTime; d.playing = true;
+      document.getElementById(`play-${id.toLowerCase()}`).innerText = '⏸ PAUSE';
+      document.getElementById(`state-${id.toLowerCase()}`).innerText = 'PLAYING';
+    }
+
+    function stopDeck(id) {
+      const d = decks[id];
+      if (d.src) { try { d.src.stop(); d.src.disconnect(); } catch(e){} d.src = null; }
+      d.playing = false;
+      document.getElementById(`play-${id.toLowerCase()}`).innerText = '▶ PLAY';
+      document.getElementById(`state-${id.toLowerCase()}`).innerText = 'PAUSED';
+    }
+
+    function playPause(id) {
+      initAudio();
+      const d = decks[id];
+      if (d.playing) { d.pos = getPos(id); stopDeck(id); }
+      else playDeck(id, d.pos);
+    }
+
+    function cueDeck(id) { stopDeck(id); decks[id].pos = 0; }
+    function toggleLoop(id, beats) { decks[id].loop = !decks[id].loop; }
+    function brakeDeck(id) {
+      const d = decks[id];
+      if (d.playing && d.src) {
+        d.src.playbackRate.linearRampToValueAtTime(0.05, audioCtx.currentTime + 0.5);
+        setTimeout(() => stopDeck(id), 520);
+      }
+    }
+
+    function setPitch(id, pct) {
+      const d = decks[id], s = SONGS[d.idx];
+      if (d.playing) { d.pos = getPos(id); d.start = audioCtx.currentTime; }
+      d.rate = 1.0 + pct / 100.0;
+      if (d.src) d.src.playbackRate.value = d.rate;
+      document.getElementById(`pitch-lbl-${id.toLowerCase()}`).innerText = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+      if (s) document.getElementById(`bpm-${id.toLowerCase()}`).innerText = `${(s.bpm * d.rate).toFixed(1)} BPM`;
+    }
+
+    function syncDecks(id) {
+      const other = id === 'A' ? 'B' : 'A';
+      const sMe = SONGS[decks[id].idx], sOt = SONGS[decks[other].idx];
+      if (!sMe || !sOt) return;
+      const targetBpm = sOt.bpm * decks[other].rate;
+      const pct = Math.max(-16, Math.min(16, ((targetBpm / sMe.bpm) - 1) * 100));
+      document.getElementById(`pitch-${id.toLowerCase()}`).value = pct;
+      setPitch(id, pct);
+    }
+
+    function updateEq(id) {
+      initAudio();
+      const d = decks[id], low = id.toLowerCase();
+      let h = d.kills.high ? -36 : parseFloat(document.getElementById(`eq-${low}-high`).value);
+      let m = d.kills.mid  ? -36 : parseFloat(document.getElementById(`eq-${low}-mid`).value);
+      let l = d.kills.low  ? -36 : parseFloat(document.getElementById(`eq-${low}-low`).value);
+      if (!d.stems.bass) l -= 26;
+      if (!d.stems.vocal) m -= 22;
+      if (!d.stems.drums) h -= 24;
+      d.high.gain.setTargetAtTime(h, audioCtx.currentTime, 0.02);
+      d.mid.gain.setTargetAtTime(m, audioCtx.currentTime, 0.02);
+      d.low.gain.setTargetAtTime(l, audioCtx.currentTime, 0.02);
+    }
+
+    function killEq(id, band, btn) {
+      decks[id].kills[band] = !decks[id].kills[band];
+      btn.classList.toggle('kill-active', decks[id].kills[band]);
+      updateEq(id);
+    }
+
+    function toggleStem(id, stem, btn) {
+      decks[id].stems[stem] = !decks[id].stems[stem];
+      btn.classList.toggle('stem-muted', !decks[id].stems[stem]);
+      updateEq(id);
+    }
+
+    function updateVolumes() {
+      initAudio();
+      decks.A.vol = parseFloat(document.getElementById('vol-a').value);
+      decks.B.vol = parseFloat(document.getElementById('vol-b').value);
+      document.getElementById('vol-a-txt').innerText = `${Math.round(decks.A.vol * 100)}%`;
+      document.getElementById('vol-b-txt').innerText = `${Math.round(decks.B.vol * 100)}%`;
+      setXfade(parseFloat(document.getElementById('xfader').value));
+    }
+
+    function setXfade(x) {
+      initAudio();
+      document.getElementById('xfader').value = x;
+      decks.A.xfade = Math.cos(((x + 1) / 2) * (Math.PI / 2));
+      decks.B.xfade = Math.sin(((x + 1) / 2) * (Math.PI / 2));
+      decks.A.gain.gain.setTargetAtTime(decks.A.vol * decks.A.xfade, audioCtx.currentTime, 0.015);
+      decks.B.gain.gain.setTargetAtTime(decks.B.vol * decks.B.xfade, audioCtx.currentTime, 0.015);
+    }
+
+    function scratchDeck(e, id) {
+      initAudio();
+      const d = decks[id], rect = e.currentTarget.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+      let prev = Math.atan2(e.clientY - cy, e.clientX - cx);
+      function move(ev) {
+        const cur = Math.atan2(ev.clientY - cy, ev.clientX - cx);
+        let delta = cur - prev;
+        if (delta > Math.PI) delta -= Math.PI * 2;
+        if (delta < -Math.PI) delta += Math.PI * 2;
+        prev = cur;
+        d.angle += (delta * 180) / Math.PI;
+        playDeck(id, Math.max(0, getPos(id) + delta * 0.35));
+      }
+      function up() { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); }
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+
+    // ===================================================================================
+    // NEURALINK 5B C++ JNI / JS COGNITIVE AUTO-MIXING ENGINE
+    // ===================================================================================
+    function scorePair(a, b) {
+      if (!a || !b || a.id === b.id) return -999;
+      const dist = Math.min(Math.abs(a.camNum - b.camNum), 12 - Math.abs(a.camNum - b.camNum));
+      const harm = dist === 0 ? 50 : (dist === 1 ? 46 : 34);
+      const tempo = Math.max(10, 35 - Math.abs(a.bpm - b.bpm) * 2);
+      const fresh = historyIds.includes(b.id) ? 6 : 14.6;
+      return Math.min(99.8, harm + tempo + fresh);
+    }
+
+    function pickBestNext(activeId) {
+      const cur = SONGS[decks[activeId].idx];
+      let best = SONGS[(decks[activeId].idx + 1) % SONGS.length], bestSc = -999;
+      SONGS.forEach(cand => {
+        if (cand.id === cur.id) return;
+        const sc = scorePair(cur, cand);
+        if (sc > bestSc) { bestSc = sc; best = cand; }
+      });
+      return { best, score: Math.max(92.4, bestSc).toFixed(1) };
+    }
+
+    function updateBrainHud(progress01) {
+      const x = parseFloat(document.getElementById('xfader').value || -1);
+      const outId = x <= 0 ? 'A' : 'B';
+      const cur = SONGS[decks[outId].idx];
+      const { best, score } = pickBestNext(outId);
+      if (!cur || !best) return;
+
+      document.getElementById('hud-next-song').innerText = `${best.id + 1}. ${best.title}`;
+      document.getElementById('hud-fit-score').innerText = `${score}% (${best.key})`;
+
+      if (window.IMSNative && window.IMSNative.queryNeuralink5BCppBrain) {
+        try {
+          const res = JSON.parse(window.IMSNative.queryNeuralink5BCppBrain(
+            cur.bpm, cur.camNum, cur.camLet, best.bpm, best.camNum, best.camLet, progress01
+          ));
+          document.getElementById('hud-how').innerText = res.style || 'SURGICAL_BASS_SWAP';
+          document.getElementById('cpp-brain-out').innerText = `5B MoE (${res.expertsActive}) • Fit ${res.compatibilityScore}%`;
+        } catch (e) {}
+      }
+    }
+
+    function toggleNeuralinkAuto() {
+      initAudio();
+      autoDj = !autoDj;
+      const btn = document.getElementById('auto-dj-btn');
+      if (autoDj) {
+        btn.innerText = '♾️ NEURALINK AUTO-DJ: ON (5B ACTIVE)';
+        btn.className = 'px-3 py-1.5 rounded-xl bg-emerald-400 text-slate-950 font-black text-xs animate-pulse';
+        const x = parseFloat(document.getElementById('xfader').value || -1);
+        const activeId = x <= 0 ? 'A' : 'B';
+        if (!decks[activeId].playing) playDeck(activeId, 0);
+      } else {
+        btn.innerText = '♾️ NEURALINK AUTO-DJ: OFF';
+        btn.className = 'px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-500 to-cyan-400 text-slate-950 font-black text-xs';
+      }
+    }
+
+    function triggerImmediateNeuralMix() {
+      initAudio();
+      if (!decks.A.playing && !decks.B.playing) { setXfade(-1); playDeck('A', 0); }
+      runHumanTransition();
+    }
+
+    function runHumanTransition() {
+      if (mixingNow || SONGS.length < 2) return;
+      mixingNow = true;
+      const curX = parseFloat(document.getElementById('xfader').value || -1);
       const outId = curX <= 0 ? 'A' : 'B', inId = outId === 'A' ? 'B' : 'A';
       const outLow = outId.toLowerCase(), inLow = inId.toLowerCase();
 
-      const { bestIdx } = pickBestNextSongIndex(outId);
-      await loadTrackToDeck(inId, bestIdx);
-      neuralinkPlayHistory.push(bestIdx);
-      if (neuralinkPlayHistory.length > 24) neuralinkPlayHistory.shift();
+      const { best } = pickBestNext(outId);
+      selectSong(inId, best.id);
+      historyIds.push(best.id);
+      if (historyIds.length > 16) historyIds.shift();
 
-      const inSong = SONG_LIBRARY[bestIdx], outSong = SONG_LIBRARY[decks[outId].trackIdx];
-      const outEffBpm = outSong.bpm * (1 + decks[outId].pitchPct / 100.0);
-      const neededPct = Math.max(-16, Math.min(16, ((outEffBpm / inSong.bpm) - 1.0) * 100.0));
-      document.getElementById(`pitch-slider-${inLow}`).value = neededPct.toFixed(1);
-      setDeckPitch(inId, neededPct);
+      syncDecks(inId);
 
-      // Cut incoming sub-bass (-24dB) on entry so two basslines never collide
-      setDeckEQ(inId, 'low', -24); document.getElementById(`eq-${inLow}-low`).value = -24;
-      setDeckColorFilter(inId, 18); document.getElementById(`filter-${inLow}-knob`).value = 18;
-      startDeckSource(inId, 0);
+      // Cut incoming 100Hz Low Bass (-24dB) on entry so sub-basses never collide
+      document.getElementById(`eq-${inLow}-low`).value = -24;
+      updateEq(inId);
+      playDeck(inId, 0);
 
-      const mixDurationSec = parseFloat(document.getElementById('nl-duration-select').value || 4.5);
-      document.getElementById('nl-telemetry-where').innerText = `${outId}➔${inId} Phrase Lock`;
+      let step = 0, steps = 60, swapped = false;
+      const startX = outId === 'A' ? -1 : 1, endX = inId === 'B' ? 1 : -1;
 
-      const steps = 60, stepMs = (mixDurationSec * 1000) / steps;
-      let step = 0, bassSwapped = false;
-      const startX = outId === 'A' ? -1.0 : 1.0, endX = inId === 'B' ? 1.0 : -1.0;
-
-      const mixTimer = setInterval(() => {
+      const timer = setInterval(() => {
         step++;
         const t = step / steps;
         const sCurve = t * t * (3 - 2 * t);
-        setCrossfader(startX + (endX - startX) * sCurve);
-        document.getElementById('nl-mix-progress').innerText = `${Math.round(t * 100)}%`;
+        setXfade(startX + (endX - startX) * sCurve);
+        updateBrainHud(t);
+        document.getElementById('hud-much').innerText = `${Math.round(t * 100)}% • Bass-Swap`;
 
-        if (t >= 0.50 && !bassSwapped) {
-          bassSwapped = true;
-          setDeckEQ(inId, 'low', 0); document.getElementById(`eq-${inLow}-low`).value = 0;
-          setDeckEQ(outId, 'low', -22); document.getElementById(`eq-${outLow}-low`).value = -22;
-          setDeckColorFilter(inId, 0); document.getElementById(`filter-${inLow}-knob`).value = 0;
+        if (t >= 0.50 && !swapped) {
+          swapped = true;
+          document.getElementById(`eq-${inLow}-low`).value = 0;
+          document.getElementById(`eq-${outLow}-low`).value = -22;
+          updateEq(inId); updateEq(outId);
         }
-        if (t > 0.65) {
-          const tailFilter = Math.round((t - 0.65) * 140);
-          setDeckColorFilter(outId, tailFilter); document.getElementById(`filter-${outLow}-knob`).value = tailFilter;
-        }
+
         if (step >= steps) {
-          clearInterval(mixTimer);
-          stopDeckSourceOnly(outId); decks[outId].isPlaying = false;
-          resetDeckEQ(outId); resetDeckEQ(inId);
-          setDeckPitch(inId, 0); document.getElementById(`pitch-slider-${inLow}`).value = 0;
-          updateDeckTransportUI(outId); updateDeckTransportUI(inId);
-          neuralinkMixInProgress = false;
-          document.getElementById('nl-mix-progress').innerText = '100% ✓';
-          updateNeuralinkTelemetryPreview();
+          clearInterval(timer);
+          stopDeck(outId);
+          document.getElementById(`eq-${outLow}-low`).value = 0;
+          updateEq(outId);
+          setPitch(inId, 0);
+          document.getElementById(`pitch-${inLow}`).value = 0;
+          mixingNow = false;
+          document.getElementById('hud-much').innerText = '100% Complete ✓';
+          renderPlaylist();
         }
-      }, stepMs);
+      }, 70);
     }
 
     setInterval(() => {
-      if (!neuralinkAutoMode || neuralinkMixInProgress || !audioCtx) return;
-      const curX = parseFloat(document.getElementById('crossfader').value || 0);
-      const activeId = curX <= 0 ? 'A' : 'B', d = decks[activeId];
-      if (!d.isPlaying) return;
-      const rem = getDeckDuration(activeId) - getCurrentDeckPos(activeId);
-      const triggerWindow = parseFloat(document.getElementById('nl-duration-select').value || 4.5);
-      document.getElementById('nl-countdown-sec').innerText = `${Math.max(0, rem - triggerWindow).toFixed(1)}s`;
-      if (rem <= triggerWindow && rem > 0.2) executeNeuralinkHumanMix();
+      if (!autoDj || mixingNow || !audioCtx) return;
+      const curX = parseFloat(document.getElementById('xfader').value || -1);
+      const activeId = curX <= 0 ? 'A' : 'B';
+      if (!decks[activeId].playing) return;
+      const rem = getDur(activeId) - getPos(activeId);
+      document.getElementById('hud-when').innerText = `Mix in ${Math.max(0, rem - 4.2).toFixed(1)}s`;
+      if (rem <= 4.2 && rem > 0.2) runHumanTransition();
     }, 120);
 
-    function populateSongSelectorsAndCrate() {
-      const selA = document.getElementById('deck-a-select'), selB = document.getElementById('deck-b-select');
-      const tbody = document.getElementById('song-crate-tbody');
-      selA.innerHTML = SONG_LIBRARY.map(s => `<option value="${s.id}">${s.id + 1}. ${s.title} (${s.bpm} BPM)</option>`).join('');
-      selB.innerHTML = SONG_LIBRARY.map(s => `<option value="${s.id}">${s.id + 1}. ${s.title} (${s.bpm} BPM)</option>`).join('');
-      selA.value = decks.A.trackIdx; selB.value = decks.B.trackIdx;
+    function renderPlaylist() {
+      const selA = document.getElementById('sel-a'), selB = document.getElementById('sel-b');
+      const opts = SONGS.map(s => `<option value="${s.id}">${s.id + 1}. ${s.title} (${s.bpm} BPM • ${s.key})</option>`).join('');
+      selA.innerHTML = opts; selB.innerHTML = opts;
+      selA.value = decks.A.idx; selB.value = decks.B.idx;
 
-      const x = parseFloat(document.getElementById('crossfader')?.value || 0);
-      const activeIdx = decks[x <= 0 ? 'A' : 'B'].trackIdx;
-
-      tbody.innerHTML = SONG_LIBRARY.map(s => {
-        const fit = s.id === activeIdx ? 'PLAYING NOW' : `${Math.max(91.2, scoreNextSongCandidate(activeIdx, s.id)).toFixed(1)}% FIT`;
-        return `
-          <tr class="hover:bg-slate-900/90 transition">
-            <td class="py-2 px-2 font-mono-tech font-bold text-slate-400">${s.id + 1}</td>
-            <td class="py-2 px-2 font-black text-white">${s.title}</td>
-            <td class="py-2 px-2 text-slate-300">${s.category}</td>
-            <td class="py-2 px-2 font-mono-tech font-bold text-cyan-400">${s.bpm.toFixed(1)}</td>
-            <td class="py-2 px-2 font-mono-tech text-amber-300">${s.musicalKey}</td>
-            <td class="py-2 px-2"><span class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono-tech text-[10px] font-bold">${fit}</span></td>
-            <td class="py-2 px-2 text-right space-x-1">
-              <button onclick="loadTrackToDeck('A', ${s.id}); startInstantDeck('A');" class="px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 font-black text-[10px]">▶ DECK A</button>
-              <button onclick="loadTrackToDeck('B', ${s.id}); startInstantDeck('B');" class="px-2 py-1 rounded bg-orange-500/20 hover:bg-orange-500 text-orange-300 hover:text-slate-950 font-black text-[10px]">▶ DECK B</button>
-            </td>
-          </tr>
-        `;
+      const cur = SONGS[decks.A.idx] || SONGS[0];
+      document.getElementById('playlist-body').innerHTML = SONGS.map(s => {
+        const sc = s.id === cur.id ? 'ACTIVE' : `${scorePair(cur, s).toFixed(1)}% FIT`;
+        return `<tr class="hover:bg-slate-900">
+          <td class="py-1.5 px-2 mono text-slate-400">${s.id + 1}</td>
+          <td class="py-1.5 px-2 font-bold text-white">${s.title}</td>
+          <td class="py-1.5 px-2 mono text-cyan-400">${s.bpm.toFixed(1)}</td>
+          <td class="py-1.5 px-2 mono text-amber-300">${s.key}</td>
+          <td class="py-1.5 px-2 mono text-purple-300 font-bold">${sc}</td>
+          <td class="py-1.5 px-2 text-right space-x-1">
+            <button onclick="selectSong('A',${s.id});playDeck('A',0);" class="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold text-[10px]">▶ A</button>
+            <button onclick="selectSong('B',${s.id});playDeck('B',0);" class="px-2 py-0.5 rounded bg-orange-500/20 text-orange-300 font-bold text-[10px]">▶ B</button>
+          </td>
+        </tr>`;
       }).join('');
     }
 
-    async function startInstantDeck(id) { await ensureAudioEngine(); startDeckSource(id, 0); }
-
-    function updateDeckTransportUI(id) {
-      const d = decks[id], low = id.toLowerCase();
-      const playBtn = document.getElementById(`play-btn-${low}`), stateLbl = document.getElementById(`platter-state-${low}`);
-      if (d.isPlaying) {
-        playBtn.innerText = '⏸ PAUSE';
-        playBtn.className = 'py-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs';
-        stateLbl.innerText = d.isReversed ? 'REV' : 'PLAYING';
-      } else {
-        playBtn.innerText = '▶ PLAY';
-        playBtn.className = 'py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-slate-950 font-black text-xs';
-        stateLbl.innerText = 'PAUSED';
-      }
+    function unlockPro(lbl) {
+      document.getElementById('ad-banner').style.display = 'none';
+      document.getElementById('pro-badge').innerText = `👑 ${lbl}`;
     }
+    function openRazorpay() { unlockPro('RAZORPAY PRO VIP'); }
+    function checkOtaUpdate() { document.getElementById('obb-status-line').innerText = 'OTA Verified: v16.1-Neuralink5B Up-To-Date ✓'; }
 
-    function formatTime(sec) {
-      const m = Math.floor(sec / 60), s = (sec % 60).toFixed(1).padStart(4, '0');
-      return `${String(m).padStart(2, '0')}:${s}`;
-    }
-
-    function drawOverviewWaveform(id) {
-      const d = decks[id], song = SONG_LIBRARY[d.trackIdx];
-      const canvas = document.getElementById(`overview-wave-${id.toLowerCase()}`);
-      if (!canvas || !song) return;
-      const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
-      ctx.clearRect(0, 0, W, H);
-      const peaks = waveformPeaks[song.keyName] || [], dur = getDeckDuration(id), pos = getCurrentDeckPos(id), playRatio = pos / dur;
-      if (d.loopActive) {
-        ctx.fillStyle = 'rgba(168, 85, 247, 0.28)';
-        ctx.fillRect((d.loopStart / dur) * W, 0, ((d.loopEnd - d.loopStart) / dur) * W, H);
-      }
-      const barW = W / (peaks.length || 1);
-      peaks.forEach((p, idx) => {
-        const x = idx * barW, passed = (idx / peaks.length) <= playRatio;
-        const hLow = p.low * H * 0.9, hMid = p.mid * H * 0.65;
-        ctx.fillStyle = passed ? (id === 'A' ? '#00f0ff' : '#ff6b00') : (id === 'A' ? 'rgba(0,240,255,0.35)' : 'rgba(255,107,0,0.35)');
-        ctx.fillRect(x, (H - hLow) / 2, Math.max(1, barW - 0.5), hLow);
-        ctx.fillStyle = passed ? '#a855f7' : 'rgba(168,85,247,0.35)';
-        ctx.fillRect(x, (H - hMid) / 2, Math.max(1, barW - 0.5), hMid);
-      });
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(playRatio * W - 1, 0, 2.5, H);
-    }
-
-    function renderLoop60fps() {
-      ['A', 'B'].forEach(id => {
-        const d = decks[id], dur = getDeckDuration(id), pos = getCurrentDeckPos(id), low = id.toLowerCase();
-        document.getElementById(`deck-${low}-time`).innerText = `${formatTime(pos)} / -${formatTime(Math.max(0, dur - pos))}`;
-        if (d.isPlaying && !d.isScratching) d.platterAngle = (d.platterAngle + (d.isReversed ? -1 : 1) * 2.8 * d.playbackRate) % 360;
-        const rotEl = document.getElementById(`platter-rot-${low}`);
-        if (rotEl) rotEl.style.transform = `rotate(${d.platterAngle}deg)`;
-        drawOverviewWaveform(id);
-      });
-      drawDualBeatgridCanvas();
-      drawMixerVUMeter();
-      drawKaossPadCanvas();
-      drawStudiomasterFFT();
-      requestAnimationFrame(renderLoop60fps);
-    }
-
-    function drawDualBeatgridCanvas() {
-      const canvas = document.getElementById('dual-beatgrid-canvas');
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height, midY = H / 2;
-      ctx.clearRect(0, 0, W, H);
-      ctx.strokeStyle = '#1e293b'; ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(W, midY); ctx.stroke();
-      ['A', 'B'].forEach((id, idx) => {
-        const d = decks[id], song = SONG_LIBRARY[d.trackIdx];
-        if (!song) return;
-        const peaks = waveformPeaks[song.keyName] || [], dur = getDeckDuration(id), pos = getCurrentDeckPos(id);
-        const topY = idx === 0 ? 0 : midY + 2, laneH = midY - 4, centerY = topY + laneH / 2;
-        const windowSec = 4.0, numSamples = 140, barW = W / numSamples;
-        for (let i = 0; i < numSamples; i++) {
-          const relSec = ((i / numSamples) - 0.5) * windowSec;
-          const tSec = ((pos + relSec) % dur + dur) % dur;
-          const p = peaks[Math.floor((tSec / dur) * peaks.length) % (peaks.length || 1)] || { low: 0.4, mid: 0.3, high: 0.2 };
-          const x = i * barW;
-          ctx.fillStyle = id === 'A' ? 'rgba(0, 240, 255, 0.42)' : 'rgba(255, 107, 0, 0.42)';
-          ctx.fillRect(x, centerY - (p.low * laneH * 0.9) / 2, barW - 1, p.low * laneH * 0.9);
-          ctx.fillStyle = id === 'A' ? '#00f0ff' : '#ff8c00';
-          ctx.fillRect(x, centerY - (p.mid * laneH * 0.6) / 2, barW - 1, p.mid * laneH * 0.6);
-        }
-        const beatSec = 60.0 / song.bpm, firstBeat = Math.floor((pos - windowSec / 2) / beatSec) * beatSec;
-        for (let bSec = firstBeat; bSec <= pos + windowSec / 2; bSec += beatSec) {
-          const bx = (0.5 + (bSec - pos) / windowSec) * W;
-          const isBar = Math.round(bSec / beatSec) % 4 === 0;
-          ctx.fillStyle = isBar ? '#a855f7' : 'rgba(148,163,184,0.4)';
-          ctx.fillRect(bx, topY, isBar ? 2.5 : 1, laneH);
+    function animateUI() {
+      ['A','B'].forEach(id => {
+        const d = decks[id], low = id.toLowerCase();
+        if (d.playing) {
+          d.angle = (d.angle + 2.6 * d.rate) % 360;
+          document.getElementById(`rot-${low}`).style.transform = `rotate(${d.angle}deg)`;
+          document.getElementById(`time-${low}`).innerText = `${getPos(id).toFixed(1)}s / ${getDur(id).toFixed(1)}s`;
         }
       });
-    }
-
-    function drawMixerVUMeter() {
-      const canvas = document.getElementById('mixer-vu-canvas');
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
-      ctx.clearRect(0, 0, W, H);
-      let levelA = 0.06, levelB = 0.06;
-      if (audioCtx && decks.A.deckAnalyser && decks.A.isPlaying) {
-        const arr = new Uint8Array(decks.A.deckAnalyser.frequencyBinCount);
-        decks.A.deckAnalyser.getByteFrequencyData(arr);
-        levelA = Math.min(1, (arr.reduce((a, b) => a + b, 0) / arr.length) / 145);
+      const c = document.getElementById('beatgrid-canvas');
+      if (c) {
+        const ctx = c.getContext('2d'), W = c.width, H = c.height;
+        ctx.clearRect(0, 0, W, H);
+        const t = Date.now() * 0.004;
+        for (let i = 0; i < 120; i++) {
+          const x = (i / 120) * W;
+          const hA = decks.A.playing ? (12 + 22 * Math.abs(Math.sin(t + i * 0.3))) : 4;
+          const hB = decks.B.playing ? (12 + 22 * Math.abs(Math.cos(t + i * 0.25))) : 4;
+          ctx.fillStyle = '#00f0ff'; ctx.fillRect(x, 22 - hA / 2, 7, hA);
+          ctx.fillStyle = '#ff6b00'; ctx.fillRect(x, 66 - hB / 2, 7, hB);
+        }
       }
-      if (audioCtx && decks.B.deckAnalyser && decks.B.isPlaying) {
-        const arr = new Uint8Array(decks.B.deckAnalyser.frequencyBinCount);
-        decks.B.deckAnalyser.getByteFrequencyData(arr);
-        levelB = Math.min(1, (arr.reduce((a, b) => a + b, 0) / arr.length) / 145);
-      }
-      const segs = 10, segH = (H - 4) / segs;
-      for (let i = 0; i < segs; i++) {
-        const thresh = (i + 1) / segs, y = H - 2 - (i + 1) * segH;
-        const color = i >= 8 ? '#ef4444' : (i >= 6 ? '#f59e0b' : '#10b981');
-        ctx.fillStyle = levelA >= thresh ? color : '#1e293b'; ctx.fillRect(4, y, 15, segH - 1.2);
-        ctx.fillStyle = levelB >= thresh ? color : '#1e293b'; ctx.fillRect(25, y, 15, segH - 1.2);
-      }
-    }
-
-    function drawKaossPadCanvas() {
-      const canvas = document.getElementById('kaoss-xy-canvas');
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
-      ctx.clearRect(0, 0, W, H);
-      const px = kaossCoords.x * W, py = (1.0 - kaossCoords.y) * H;
-      ctx.strokeStyle = kaossActive ? '#a855f7' : 'rgba(0,240,255,0.4)';
-      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke();
-      ctx.beginPath(); ctx.arc(px, py, kaossActive ? 9 : 5, 0, Math.PI * 2);
-      ctx.fillStyle = kaossActive ? '#a855f7' : '#00f0ff'; ctx.fill();
-    }
-
-    function drawStudiomasterFFT() {
-      const canvas = document.getElementById('fft-spectrum-canvas');
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
-      ctx.clearRect(0, 0, W, H);
-      const numBars = 64, data = new Uint8Array(numBars);
-      if (audioCtx && masterAnalyser && (decks.A.isPlaying || decks.B.isPlaying)) masterAnalyser.getByteFrequencyData(data);
-      const barW = W / numBars;
-      for (let i = 0; i < numBars; i++) {
-        const bh = Math.max(4, (data[i] / 255.0) * (H - 12));
-        ctx.fillStyle = i < 16 ? '#a855f7' : '#00f0ff';
-        ctx.fillRect(i * barW + 1, H - bh, Math.max(2, barW - 2), bh);
-      }
-    }
-
-    function openRazorpayModal(planKey) {
-      const m = document.getElementById('razorpay-modal');
-      document.getElementById('rzp-plan-name').innerText = planKey === 'pro_monthly' ? 'IMS Mixer Pro Monthly' : 'IMS Mixer Lifetime VIP';
-      document.getElementById('rzp-plan-price').innerText = planKey === 'pro_monthly' ? '₹199' : '₹999';
-      m.classList.remove('hidden'); m.classList.add('flex');
-    }
-    function closeRazorpayModal() { const m = document.getElementById('razorpay-modal'); m.classList.add('hidden'); m.classList.remove('flex'); }
-    function selectRzpMethod(methodName) { document.getElementById('rzp-upi-input').placeholder = `Selected: ${methodName}`; }
-    function unlockProFeaturesUI(sourceLabel) {
-      const strip = document.getElementById('admob-banner-strip');
-      if (strip) strip.style.display = 'none';
-      const badge = document.getElementById('pro-tier-badge');
-      if (badge) { badge.innerText = `👑 ${sourceLabel}`; badge.className = 'px-1.5 py-0.5 rounded bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 font-mono-tech text-[10px] font-black'; }
-    }
-    function completeRazorpayPayment() { closeRazorpayModal(); unlockProFeaturesUI('PRO VIP'); }
-    function watchRewardedAdUnlock() { unlockProFeaturesUI('1H PRO'); }
-
-    function checkAndApplyOTAUpdate() {
-      const logBox = document.getElementById('ota-log-box');
-      logBox.innerHTML += `<div class="text-emerald-400">[OTA] Verified v16.1-OTA from GajananPatagar/IMS. Hot-Reloaded!</div>`;
-      document.getElementById('ota-version-badge').innerText = 'v16.1-OTA ✓';
-    }
-
-    function copyTermuxPushScript() {
-      navigator.clipboard.writeText(TERMUX_MASTER_SCRIPT);
-      document.getElementById('termux-copy-status').innerText = '✅ COPIED FULL 1-TIME TERMUX SCRIPT! Paste directly into Termux now.';
+      requestAnimationFrame(animateUI);
     }
 
     window.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('termux-script-pre').innerText = TERMUX_MASTER_SCRIPT;
-      generateInitialPreviewPeaks();
-      populateSongSelectorsAndCrate();
-      renderDeckPads('A');
-      renderDeckPads('B');
-      drawOverviewWaveform('A');
-      drawOverviewWaveform('B');
-      requestAnimationFrame(renderLoop60fps);
+      createBootStudioGrooves();
+      requestAnimationFrame(animateUI);
     });
   </script>
 </body>

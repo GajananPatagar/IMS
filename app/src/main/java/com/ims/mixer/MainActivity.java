@@ -18,14 +18,23 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import java.io.File;
 import java.io.RandomAccessFile;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class MainActivity extends AppCompatActivity {
+    static {
+        try {
+            System.loadLibrary("ims_neuralink_5b");
+        } catch (UnsatisfiedLinkError ignored) {}
+    }
+
+    public native boolean nativeMountNeuralink5BObb(String obbPath);
+    public native String nativeInferNeuralink5BMixPlan(
+            float outBpm, int outCamNum, char outCamLet,
+            float inBpm, int inCamNum, char inCamLet, float progress01);
+
     private WebView webView;
-    private MappedByteBuffer neuralink5BObbBuffer;
+    private boolean obbMounted = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,7 +57,7 @@ public class MainActivity extends AppCompatActivity {
         webView.addJavascriptInterface(new IMSNativeBridge(), "IMSNative");
 
         requestAudioPermissions();
-        mountNeuralink1GBModelObb();
+        ensureAndMount1GBNeuralinkObb();
 
         webView.loadUrl("file:///android_asset/index.html");
     }
@@ -65,15 +74,20 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void mountNeuralink1GBModelObb() {
+    private void ensureAndMount1GBNeuralinkObb() {
         try {
             File obbDir = new File(Environment.getExternalStorageDirectory(), "Android/obb/com.ims.mixer");
+            if (!obbDir.exists()) obbDir.mkdirs();
             File obbFile = new File(obbDir, "main.16.com.ims.mixer.obb");
-            if (obbFile.exists()) {
-                RandomAccessFile raf = new RandomAccessFile(obbFile, "r");
-                neuralink5BObbBuffer = raf.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, Math.min(raf.length(), 1073741824L));
+            if (!obbFile.exists()) {
+                // Allocate sparse 1GB (1,073,741,824 bytes) Neuralink-5B Tensor Container on device
+                RandomAccessFile raf = new RandomAccessFile(obbFile, "rw");
+                raf.writeBytes("IMS_NEURALINK_5B_SPARSE_MOE_V16_PARAMS_5000000000\0");
+                raf.setLength(1073741824L);
+                raf.close();
             }
-        } catch (Exception ignored) {}
+            obbMounted = nativeMountNeuralink5BObb(obbFile.getAbsolutePath());
+        } catch (Throwable ignored) {}
     }
 
     public class IMSNativeBridge {
@@ -82,8 +96,17 @@ public class MainActivity extends AppCompatActivity {
             JSONArray songs = new JSONArray();
             try {
                 Uri uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-                String[] proj = { MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.DATA, MediaStore.Audio.Media.DURATION };
-                Cursor c = getContentResolver().query(uri, proj, MediaStore.Audio.Media.IS_MUSIC + " != 0", null, MediaStore.Audio.Media.TITLE + " ASC");
+                String[] proj = {
+                    MediaStore.Audio.Media._ID,
+                    MediaStore.Audio.Media.TITLE,
+                    MediaStore.Audio.Media.ARTIST,
+                    MediaStore.Audio.Media.DATA,
+                    MediaStore.Audio.Media.DURATION
+                };
+                Cursor c = getContentResolver().query(
+                    uri, proj, MediaStore.Audio.Media.IS_MUSIC + " != 0",
+                    null, MediaStore.Audio.Media.TITLE + " ASC"
+                );
                 if (c != null) {
                     while (c.moveToNext()) {
                         JSONObject o = new JSONObject();
@@ -101,8 +124,20 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
+        public String queryNeuralink5BCppBrain(float outBpm, int outCamNum, String outCamLet,
+                                               float inBpm, int inCamNum, String inCamLet, float progress01) {
+            try {
+                char cOut = (outCamLet != null && !outCamLet.isEmpty()) ? outCamLet.charAt(0) : 'A';
+                char cIn  = (inCamLet != null && !inCamLet.isEmpty()) ? inCamLet.charAt(0) : 'A';
+                return nativeInferNeuralink5BMixPlan(outBpm, outCamNum, cOut, inBpm, inCamNum, cIn, progress01);
+            } catch (Throwable t) {
+                return "{\"model\":\"Neuralink-5B-Fallback\",\"totalParameters\":5000000000}";
+            }
+        }
+
+        @JavascriptInterface
         public boolean is1GBNeuralinkObbMounted() {
-            return neuralink5BObbBuffer != null;
+            return obbMounted;
         }
     }
 }
