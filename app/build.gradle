@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.ims.mixer'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.ims.mixer"
+        minSdk 24
+        targetSdk 34
+        versionCode 16
+        versionName "16.0-Neuralink5B"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file("ims-release-key.jks")
+            storePassword System.getenv("KEYSTORE_PASS") ?: "ims123456"
+            keyAlias System.getenv("KEY_ALIAS") ?: "ims_key"
+            keyPassword System.getenv("KEY_PASS") ?: "ims123456"
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
+        }
+        debug {
+            signingConfig signingConfigs.release
+        }
+    }
+
+    aaptOptions {
+        noCompress "bin", "obb", "lut", "mp3", "wav", "tflite"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.webkit:webkit:1.11.0'
+}

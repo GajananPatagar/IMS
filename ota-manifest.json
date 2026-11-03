@@ -1,0 +1,10 @@
+{
+  "appName": "IMS Mixer",
+  "packageId": "com.ims.mixer",
+  "version": "16.0-Neuralink5B",
+  "versionCode": 16,
+  "bundleUrl": "https://raw.githubusercontent.com/GajananPatagar/IMS/main/app/src/main/assets/index.html",
+  "obbModelParams": "5,000,000,000 (1GB INT2 Sparse-MoE OBB + 32MB Fast-Boot LUT)",
+  "razorpayEnabled": true,
+  "admobEnabled": true
+}
